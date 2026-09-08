@@ -70,6 +70,13 @@ def main():
     # ── setup ──
     sub.add_parser("setup", help="Interactive configuration wizard")
 
+    sub.add_parser("setup-wechat", help="Install only the optional WeChat keyword-search runtime")
+    p_wechat = sub.add_parser("search-wechat", help="Search WeChat article listings by keyword")
+    p_wechat.add_argument("query", help="One keyword query (quote phrases with spaces)")
+    p_wechat.add_argument("--limit", type=int, default=10, help="Results from one page, 1–10")
+    p_wechat.add_argument("--page", type=int, default=1, help="Search result page, 1–100")
+    p_wechat.add_argument("--json", action="store_true", help="Output structured search results")
+
     # ── install ──
     p_install = sub.add_parser("install", help="One-shot installer with flags")
     p_install.add_argument("--env", choices=["local", "server", "auto"], default="auto",
@@ -228,6 +235,8 @@ def main():
 
     if args.command == "doctor":
         _cmd_doctor(args)
+    elif args.command in {"setup-wechat", "search-wechat"}:
+        _cmd_wechat(args)
     elif args.command == "check-update":
         _cmd_check_update()
     elif args.command == "watch":
@@ -249,6 +258,32 @@ def main():
 
 
 # ── Command handlers ────────────────────────────────
+
+
+def _cmd_wechat(args):
+    from agent_reach.wechat import WeChatSearchError, search_wechat, setup_runtime
+
+    try:
+        if args.command == "setup-wechat":
+            setup_runtime()
+            print("公众号关键词搜索解析器已就绪；实际搜索时会检查搜狗是否放行。")
+            return
+        result = search_wechat(args.query, args.limit, args.page)
+    except WeChatSearchError as exc:
+        if getattr(args, "json", False):
+            print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False))
+        else:
+            print(f"搜索未完成：{exc}", file=sys.stderr)
+        sys.exit(1)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    print(f"找到 {result['total']} 条搜索结果（第 {result['page']} 页）。")
+    print(result["note"])
+    for row in result["articles"]:
+        print(f"\n{row['title']}\n公众号：{row['source'] or '缺失'}")
+        print(f"日期：{row['datetime'] or '缺失'}\n{row['summary'] or '摘要缺失'}")
+        print(row["url"])
 
 
 def _cmd_install(args):
