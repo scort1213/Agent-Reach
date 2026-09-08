@@ -5,6 +5,22 @@ on:
   pull_request:
 
 jobs:
+  wechat-parser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install optional parser and run offline regressions
+        run: |
+          python -m pip install -c constraints.txt -e '.[dev]'
+          agent-reach setup-wechat
+          AGENT_REACH_TEST_WECHAT_RUNTIME="$HOME/.agent-reach/tools/wechat-article-search" pytest tests/test_wechat.py -q
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -79,6 +95,8 @@ jobs:
           dupes = [n for n, c in collections.Counter(names).items() if c > 1]
           assert not dupes, f"duplicate entries in wheel: {dupes}"
           assert "agent_reach/skill/SKILL.md" in names, "SKILL.md missing from wheel"
+          for filename in ("parser.cjs", "run.cjs", "LICENSE", "NOTICE.md", "package.json", "package-lock.json"):
+              assert f"agent_reach/vendor/wechat_article_search/{filename}" in names
           for prefix in ("agent_reach/guides/", "agent_reach/scripts/", "agent_reach/skill/references/"):
               assert any(n.startswith(prefix) for n in names), f"{prefix} missing from wheel"
           print(f"wheel OK: {len(names)} entries, no duplicates, data files present")
