@@ -9,12 +9,14 @@ description: >
   Twitter/X, Reddit, Facebook, Instagram, YouTube, GitHub, Bilibili, XiaoHongShu,
   Xiaoyuzhou Podcast, LinkedIn/jobs/recruiting, V2EX, Xueqiu (stocks), Toutiao articles, RSS.
 
+  Includes fixed WeRead accounts and Douyin account/keyword collection with evidence-based analysis.
+
   16 platforms, multi-backend routing (OpenCLI / per-platform CLIs / APIs).
   Zero config for 6 channels. Run `agent-reach doctor --json` to see which
   backend serves each platform right now.
 
   NOT for: writing reports/analysis/translation (this skill only FETCHES
-  internet content); posting/commenting/liking (write operations); platforms
+  internet content, except analysis accompanying WeRead/Douyin collection); posting/commenting/liking (write operations); platforms
   that already have a dedicated skill installed (prefer that skill).
 metadata:
   homepage: https://github.com/Panniantong/Agent-Reach
@@ -153,3 +155,7 @@ If a channel needs setup, fetch the install guide:
 https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md
 
 The user only provides cookies / one extension click; the agent does the rest.
+
+## WeRead accounts and Douyin collection
+
+For these workflows read [references/collection.md](references/collection.md). The host Agent performs browser discovery and semantic review; collection commands only prepare materials until an evidence-based review is recorded.

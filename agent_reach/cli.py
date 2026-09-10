@@ -188,6 +188,10 @@ def main():
     # ── version ──
     sub.add_parser("version", help="Show version")
 
+    from agent_reach.collection.cli import register as register_collection
+
+    register_collection(sub)
+
     args = parser.parse_args()
 
     if args.command == "configure" and args.from_browser:
@@ -238,7 +242,14 @@ def main():
         print(f"Agent Reach v{__version__}")
         sys.exit(0)
 
-    if args.command == "doctor":
+    if args.command in {
+        "collect-wechat", "collect-douyin", "collection-review",
+        "collection-frames", "collection-status", "wechat-login",
+    }:
+        from agent_reach.collection.cli import run as run_collection
+
+        sys.exit(run_collection(args))
+    elif args.command == "doctor":
         _cmd_doctor(args)
     elif args.command == "check-update":
         _cmd_check_update()
@@ -596,6 +607,7 @@ def _install_skill(force: bool = True):
     # Install into every known skill root that already exists.
     skill_dirs = [
         (os.path.expanduser("~/.agents/skills"), "Agent"),
+        (os.path.expanduser("~/.codex/skills"), "Codex"),
         (os.path.expanduser("~/.config/opencode/skills"), "OpenCode"),
         (os.path.expanduser("~/.openclaw/skills"), "OpenClaw"),
         (os.path.expanduser("~/.claude/skills"), "Claude Code"),
@@ -649,6 +661,7 @@ def _uninstall_skill():
         ("~/.openclaw/skills/agent-reach", "OpenClaw"),
         ("~/.claude/skills/agent-reach", "Claude Code"),
         ("~/.agents/skills/agent-reach", "Agent"),
+        ("~/.codex/skills/agent-reach", "Codex"),
     ]
 
     # Also check OPENCLAW_HOME
@@ -1940,6 +1953,7 @@ def _cmd_uninstall(args):
         ("~/.openclaw/skills/agent-reach", "OpenClaw"),
         ("~/.claude/skills/agent-reach", "Claude Code"),
         ("~/.agents/skills/agent-reach", "Agent"),
+        ("~/.codex/skills/agent-reach", "Codex"),
     ]
 
     for skill_path_template, platform_name in skill_dirs:
@@ -2264,7 +2278,7 @@ def _is_newer_version(remote: str, local: str) -> bool:
     """
     def parse(v):
         try:
-            return tuple(int(x) for x in v.strip().split("."))
+            return tuple(int(x) for x in v.strip().split("+", 1)[0].split("."))
         except ValueError:
             return None
 
