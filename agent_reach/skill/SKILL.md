@@ -50,7 +50,7 @@ metadata:
 | 小红书/推特/B站/V2EX/Reddit/Facebook/Instagram | social | [references/social.md](references/social.md) |
 | 招聘/职位/LinkedIn | career | [references/career.md](references/career.md) |
 | GitHub/代码 | dev | [references/dev.md](references/dev.md) |
-| 今日头条文章/网页/文章/RSS | web | [references/web.md](references/web.md) |
+| 今日头条关键词/账号批量/文章、网页、RSS | web | [references/web.md](references/web.md) |
 | YouTube/B站/播客字幕 | video | [references/video.md](references/video.md) |
 | 雪球/股票行情 | finance | [references/finance.md](references/finance.md) |
 
