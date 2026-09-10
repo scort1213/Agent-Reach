@@ -1,9 +1,9 @@
 [project]
 name = "agent-reach"
-version = "1.5.0"
+version = "1.5.0+collection.1"
 description = "Give your AI Agent eyes to see the entire internet. Search + Read 10+ platforms."
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "MIT AND AGPL-3.0-only"}
 requires-python = ">=3.10"
 authors = [{name = "Neo Reid"}]
 keywords = [
@@ -38,6 +38,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+collection = ["av>=14", "Pillow>=10", "beautifulsoup4>=4.12", "qrcode>=8"]
 browser = ["playwright>=1.40"]
 cookies = ["browser-cookie3>=0.19"]
 all = ["playwright>=1.40", "mcp[cli]>=1.0", "browser-cookie3>=0.19"]
