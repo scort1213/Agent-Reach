@@ -1,0 +1,128 @@
+[
+  {
+    "platform": "github",
+    "discovery_task": "搜agent workflow，选3个仓库",
+    "content_analysis_task": "核对README、许可证、最近提交并说明用途差异",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "twitter",
+    "discovery_task": "AI agent近24小时3条",
+    "content_analysis_task": "读首帖与最多10条回复，区分营销和可信证据",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "youtube",
+    "discovery_task": "AI workflow tutorial短视频",
+    "content_analysis_task": "读取字幕、检查画面，给出操作与价值分析",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "reddit",
+    "discovery_task": "AI agent workflow 3帖",
+    "content_analysis_task": "读取正文及首帖回复，分析分歧",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "facebook",
+    "discovery_task": "AI tools公开搜索3项",
+    "content_analysis_task": "读取公开页面帖子并判断实用性",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "instagram",
+    "discovery_task": "定位openai账号",
+    "content_analysis_task": "读取最多3帖文字与图片，解释表达方式",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "bilibili",
+    "discovery_task": "AI工作流教程3条",
+    "content_analysis_task": "选≤5分钟视频，读取字幕、检查画面；不以简介替代",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "xiaohongshu",
+    "discovery_task": "AI工作流3条原始笔记",
+    "content_analysis_task": "读取文字并查看配图，区分AI搜索概览与原始笔记",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "linkedin",
+    "discovery_task": "AI engineer公开岗位3项",
+    "content_analysis_task": "读职责与要求，分析技能共同点",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "xiaoyuzhou",
+    "discovery_task": "人工智能播客3条",
+    "content_analysis_task": "读单集详情和转写，区别shownotes与逐字稿",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "v2ex",
+    "discovery_task": "热门/AI节点讨论",
+    "content_analysis_task": "读AI相关主题及10条回复，分析证据与争议",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "xueqiu",
+    "discovery_task": "搜索英伟达，精确定位NVDA",
+    "content_analysis_task": "取带时间行情和3条讨论，区分事实、观点与截断",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "rss",
+    "discovery_task": "HN和GitHub博客各3项",
+    "content_analysis_task": "读取GitHub三篇原文，按发布日期与价值分析",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "toutiao",
+    "discovery_task": "人工智能近24h和中国网信杂志",
+    "content_analysis_task": "关键词最多3篇及账号3篇正文，核对标题日期",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "exa_search",
+    "discovery_task": "AI agent workflow官方文档3项",
+    "content_analysis_task": "读原文，比较能力边界和变更提示",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "web",
+    "discovery_task": "提供Python venv及n8n文档链接",
+    "content_analysis_task": "读实际正文，回答如何隔离依赖/AI组件组成",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "wechat",
+    "discovery_task": "机器之心及陌生账号AI产品阿颖",
+    "content_analysis_task": "每账号最多3篇，核对正文开头中段结尾并分析",
+    "rounds": 3,
+    "max_candidates": 3
+  },
+  {
+    "platform": "douyin",
+    "discovery_task": "Fred博主与AI Agent近24h",
+    "content_analysis_task": "发现3条，1条≤5分钟Get转写+抽帧+分析",
+    "rounds": 3,
+    "max_candidates": 3
+  }
+]

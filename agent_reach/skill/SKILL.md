@@ -140,6 +140,10 @@ agent-reach doctor --json
 - [视频播客](references/video.md) — YouTube, B站, 小宇宙
 - [金融行情](references/finance.md) — 雪球股票行情、搜索、热门内容
 
+## 场景稳定性验收
+
+用户要求 benchmark 或平台验收时，使用 [基准执行与审阅](references/benchmark.md)。命令成功不代表内容完整或分析完成。
+
 ## 配置渠道
 
 如果某个 channel 需要配置，获取安装指南：
