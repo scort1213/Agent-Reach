@@ -1,0 +1,580 @@
+[
+  {
+    "id": "v2ex-discover",
+    "platform": "v2ex",
+    "stage": "discovery",
+    "task": "v2ex-discover",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://www.v2ex.com/api/topics/hot.json"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://www.v2ex.com/api/topics/hot.json"
+    ]
+  },
+  {
+    "id": "rss-hn",
+    "platform": "rss",
+    "stage": "discovery",
+    "task": "rss-hn",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "rss",
+      "https://hnrss.org/frontpage"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://hnrss.org/frontpage"
+    ]
+  },
+  {
+    "id": "rss-github",
+    "platform": "rss",
+    "stage": "discovery",
+    "task": "rss-github",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "rss",
+      "https://github.blog/feed/"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://github.blog/feed/"
+    ]
+  },
+  {
+    "id": "web-static",
+    "platform": "web",
+    "stage": "content",
+    "task": "web-static",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://docs.python.org/3/tutorial/venv.html"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://docs.python.org/3/tutorial/venv.html"
+    ]
+  },
+  {
+    "id": "web-dynamic",
+    "platform": "web",
+    "stage": "content",
+    "task": "web-dynamic",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://docs.n8n.io/advanced-ai/"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://docs.n8n.io/advanced-ai/"
+    ]
+  },
+  {
+    "id": "wechat-machine",
+    "platform": "wechat",
+    "stage": "content",
+    "task": "wechat-machine",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "wechat",
+      "机器之心"
+    ],
+    "timeout": 180,
+    "cache": "fresh_request",
+    "source_urls": []
+  },
+  {
+    "id": "wechat-ay",
+    "platform": "wechat",
+    "stage": "content",
+    "task": "wechat-ay",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "wechat",
+      "AI产品阿颖"
+    ],
+    "timeout": 180,
+    "cache": "fresh_request",
+    "source_urls": []
+  },
+  {
+    "id": "twitter-discover",
+    "platform": "twitter",
+    "stage": "discovery",
+    "task": "找到相关内容并核验来源与日期",
+    "argv": [
+      "opencli",
+      "twitter",
+      "search",
+      "AI agent since:2026-09-10",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request",
+    "expected": [
+      "非空相关记录",
+      "来源URL",
+      "日期或缺失说明"
+    ]
+  },
+  {
+    "id": "reddit-discover",
+    "platform": "reddit",
+    "stage": "discovery",
+    "task": "找到相关内容并核验来源与日期",
+    "argv": [
+      "opencli",
+      "reddit",
+      "search",
+      "AI agent workflow",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request",
+    "expected": [
+      "非空相关记录",
+      "来源URL",
+      "日期或缺失说明"
+    ]
+  },
+  {
+    "id": "facebook-discover",
+    "platform": "facebook",
+    "stage": "discovery",
+    "task": "找到相关内容并核验来源与日期",
+    "argv": [
+      "opencli",
+      "facebook",
+      "search",
+      "AI tools",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request",
+    "expected": [
+      "非空相关记录",
+      "来源URL",
+      "日期或缺失说明"
+    ]
+  },
+  {
+    "id": "instagram-discover",
+    "platform": "instagram",
+    "stage": "discovery",
+    "task": "找到相关内容并核验来源与日期",
+    "argv": [
+      "opencli",
+      "instagram",
+      "search",
+      "openai",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request",
+    "expected": [
+      "非空相关记录",
+      "来源URL",
+      "日期或缺失说明"
+    ]
+  },
+  {
+    "id": "xiaohongshu-discover",
+    "platform": "xiaohongshu",
+    "stage": "discovery",
+    "task": "找到相关内容并核验来源与日期",
+    "argv": [
+      "opencli",
+      "xiaohongshu",
+      "search",
+      "AI工作流",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request",
+    "expected": [
+      "非空相关记录",
+      "来源URL",
+      "日期或缺失说明"
+    ]
+  },
+  {
+    "id": "xueqiu-discover",
+    "platform": "xueqiu",
+    "stage": "discovery",
+    "task": "找到相关内容并核验来源与日期",
+    "argv": [
+      "opencli",
+      "xueqiu",
+      "search",
+      "英伟达",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request",
+    "expected": [
+      "非空相关记录",
+      "来源URL",
+      "日期或缺失说明"
+    ]
+  },
+  {
+    "id": "youtube-discover",
+    "platform": "youtube",
+    "stage": "discovery",
+    "task": "找到相关内容并核验来源与日期",
+    "argv": [
+      "opencli",
+      "youtube",
+      "search",
+      "AI agent workflow tutorial",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request",
+    "expected": [
+      "非空相关记录",
+      "来源URL",
+      "日期或缺失说明"
+    ]
+  },
+  {
+    "id": "github-entry",
+    "platform": "github",
+    "stage": "discovery",
+    "task": "验证已安装入口能搜索具体内容",
+    "argv": [
+      "gh",
+      "search",
+      "repos",
+      "agent workflow",
+      "--limit",
+      "3",
+      "--json",
+      "fullName,description,url,updatedAt"
+    ],
+    "timeout": 45,
+    "cache": "fresh_request"
+  },
+  {
+    "id": "exa_search-entry",
+    "platform": "exa_search",
+    "stage": "discovery",
+    "task": "验证已安装入口能搜索具体内容",
+    "argv": [
+      "mcporter",
+      "call",
+      "exa.web_search_exa",
+      "query=AI agent workflow official documentation",
+      "numResults=3"
+    ],
+    "timeout": 45,
+    "cache": "fresh_request"
+  },
+  {
+    "id": "bilibili-discover",
+    "platform": "bilibili",
+    "stage": "discovery",
+    "task": "AI工作流教程搜索",
+    "argv": [
+      "bili",
+      "search",
+      "AI工作流教程",
+      "--type",
+      "video",
+      "-n",
+      "3"
+    ],
+    "timeout": 45,
+    "cache": "fresh_request"
+  },
+  {
+    "id": "github-0",
+    "platform": "github",
+    "stage": "content",
+    "task": "读取README、许可与实际维护记录",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "github",
+      "openai/openai-agents-python"
+    ],
+    "timeout": 110,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://github.com/openai/openai-agents-python"
+    ]
+  },
+  {
+    "id": "github-1",
+    "platform": "github",
+    "stage": "content",
+    "task": "读取README、许可与实际维护记录",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "github",
+      "vercel/workflow"
+    ],
+    "timeout": 110,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://github.com/vercel/workflow"
+    ]
+  },
+  {
+    "id": "github-2",
+    "platform": "github",
+    "stage": "content",
+    "task": "读取README、许可与实际维护记录",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "github",
+      "activepieces/activepieces"
+    ],
+    "timeout": 110,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://github.com/activepieces/activepieces"
+    ]
+  },
+  {
+    "id": "v2ex-topic",
+    "platform": "v2ex",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://www.v2ex.com/api/topics/show.json?id=1241024"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://www.v2ex.com/api/topics/show.json?id=1241024"
+    ]
+  },
+  {
+    "id": "v2ex-replies",
+    "platform": "v2ex",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://www.v2ex.com/api/replies/show.json?topic_id=1241024&page=1"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://www.v2ex.com/api/replies/show.json?topic_id=1241024&page=1"
+    ]
+  },
+  {
+    "id": "rss-article1",
+    "platform": "rss",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://github.blog/news-insights/company-news/github-availability-report-august-2026/"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://github.blog/news-insights/company-news/github-availability-report-august-2026/"
+    ]
+  },
+  {
+    "id": "rss-article2",
+    "platform": "rss",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://github.blog/ai-and-ml/github-copilot/project-hydrafusion-frontier-quality-via-multi-model-orchestration/"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://github.blog/ai-and-ml/github-copilot/project-hydrafusion-frontier-quality-via-multi-model-orchestration/"
+    ]
+  },
+  {
+    "id": "rss-article3",
+    "platform": "rss",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://github.blog/ai-and-ml/github-copilot/github-copilot-app-for-beginners-run-several-agents-at-once/"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://github.blog/ai-and-ml/github-copilot/github-copilot-app-for-beginners-run-several-agents-at-once/"
+    ]
+  },
+  {
+    "id": "exa-doc1",
+    "platform": "exa_search",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://developers.openai.com/api/docs/guides/agent-builder"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://developers.openai.com/api/docs/guides/agent-builder"
+    ]
+  },
+  {
+    "id": "exa-doc2",
+    "platform": "exa_search",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://docs.kore.ai/agent-platform/workflows"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://docs.kore.ai/agent-platform/workflows"
+    ]
+  },
+  {
+    "id": "exa-doc3",
+    "platform": "exa_search",
+    "stage": "content",
+    "task": "读取搜索或订阅发现的实际正文",
+    "argv": [
+      "agent-reach-benchmark-source",
+      "http",
+      "https://r.jina.ai/https://docs.c3.ai/docs/genAiSearch/8.9/topic/genai-dev-workflows-overview"
+    ],
+    "timeout": 35,
+    "cache": "fresh_request",
+    "source_urls": [
+      "https://r.jina.ai/https://docs.c3.ai/docs/genAiSearch/8.9/topic/genai-dev-workflows-overview"
+    ]
+  },
+  {
+    "id": "xiaoyuzhou-discover",
+    "platform": "xiaoyuzhou",
+    "stage": "discovery",
+    "task": "通过既有搜索后端定位人工智能相关播客",
+    "argv": [
+      "mcporter",
+      "call",
+      "exa.web_search_exa",
+      "query=site:xiaoyuzhoufm.com/episode 人工智能",
+      "numResults=3"
+    ],
+    "timeout": 45,
+    "cache": "fresh_request"
+  },
+  {
+    "id": "facebook-profile",
+    "platform": "facebook",
+    "stage": "content",
+    "task": "核对指定来源实际内容",
+    "argv": [
+      "opencli",
+      "facebook",
+      "profile",
+      "OpenAI",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request"
+  },
+  {
+    "id": "instagram-content",
+    "platform": "instagram",
+    "stage": "content",
+    "task": "核对指定来源实际内容",
+    "argv": [
+      "opencli",
+      "instagram",
+      "user",
+      "openai",
+      "--limit",
+      "3",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request"
+  },
+  {
+    "id": "xueqiu-stock",
+    "platform": "xueqiu",
+    "stage": "content",
+    "task": "核对指定来源实际内容",
+    "argv": [
+      "opencli",
+      "xueqiu",
+      "stock",
+      "NVDA",
+      "-f",
+      "json"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request"
+  },
+  {
+    "id": "twitter-thread",
+    "platform": "twitter",
+    "stage": "content",
+    "task": "核对指定来源实际内容",
+    "argv": [
+      "opencli",
+      "twitter",
+      "thread",
+      "https://x.com/i/status/2098011374559662462",
+      "-f",
+      "json",
+      "--limit",
+      "10"
+    ],
+    "timeout": 60,
+    "cache": "fresh_request"
+  }
+]
