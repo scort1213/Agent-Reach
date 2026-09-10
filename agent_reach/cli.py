@@ -93,7 +93,7 @@ def main():
     p_install.add_argument("--channels", default="",
                            help="Comma-separated optional channels to install "
                                 "(twitter,xiaoyuzhou,xueqiu,xiaohongshu,"
-                                "reddit,facebook,instagram,bilibili,linkedin,all)")
+                                "reddit,facebook,instagram,bilibili,linkedin,toutiao,all)")
 
     # ── configure ──
     p_conf = sub.add_parser("configure", help="Set a config value or auto-extract from browser")
@@ -150,6 +150,18 @@ def main():
     # ── format ──
     p_format = sub.add_parser("format", help="Clean and format platform API output")
     p_format.add_argument("platform", choices=["xhs"], help="Platform to format (xhs)")
+
+    # ── read-toutiao ──
+    p_toutiao = sub.add_parser("read-toutiao", help="Read one public Toutiao article")
+    p_toutiao.add_argument("url", help="Toutiao article URL")
+    p_toutiao.add_argument("--json", action="store_true",
+                           help="Output article data or a structured error as JSON")
+
+    p_batch = sub.add_parser("read-toutiao-batch", help="Read a browser-discovered article list")
+    p_batch.add_argument("manifest", help="JSON with mode, captured_at, list_url and items")
+    p_batch.add_argument("--output", required=True, help="Dedicated resumable output directory")
+    p_batch.add_argument("--limit", type=int, default=20, help="Maximum unique articles to read")
+    p_batch.add_argument("--hours", type=float, help="Publication window; keyword default: 24h")
 
     # ── check-update ──
     # ── transcribe ──
@@ -246,9 +258,51 @@ def main():
         _cmd_format(args)
     elif args.command == "transcribe":
         _cmd_transcribe(args)
+    elif args.command == "read-toutiao":
+        _cmd_read_toutiao(args)
+    elif args.command == "read-toutiao-batch":
+        _cmd_read_toutiao_batch(args)
 
 
 # ── Command handlers ────────────────────────────────
+
+
+def _cmd_read_toutiao_batch(args):
+    from pathlib import Path
+
+    from agent_reach.readers.toutiao_batch import read_batch
+
+    try:
+        manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
+        result = read_batch(manifest, Path(args.output), limit=args.limit, hours=args.hours)
+    except (ValueError, OSError, KeyError, TypeError) as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
+        raise SystemExit(1) from None
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if not result["ok"]:
+        raise SystemExit(2)
+
+
+def _cmd_read_toutiao(args):
+    """Read only the requested article; do not run installers or global probes."""
+    from agent_reach.channels.toutiao import format_article
+    from agent_reach.readers.toutiao import ToutiaoReadError, read_article
+
+    try:
+        article = read_article(args.url)
+    except ToutiaoReadError as exc:
+        if args.json:
+            print(json.dumps({
+                "ok": False,
+                "error": {"code": exc.code, "message": str(exc)},
+            }, ensure_ascii=False, indent=2))
+        else:
+            print(f"头条文章读取失败：{exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    if args.json:
+        print(json.dumps({"ok": True, **article}, ensure_ascii=False, indent=2))
+    else:
+        print(format_article(article))
 
 
 def _cmd_install(args):
@@ -274,7 +328,8 @@ def _cmd_install(args):
         # xueqiu: cookie-only, no install step
         # linkedin: manual setup, no auto-install
     }
-    supported_channels = set(CHANNEL_INSTALLERS) | {"xueqiu", "linkedin"}
+    # Toutiao's small article reader ships with this package; no extra installer.
+    supported_channels = set(CHANNEL_INSTALLERS) | {"xueqiu", "linkedin", "toutiao"}
     raw_channels = [
         channel.strip().lower()
         for channel in args.channels.split(",")
