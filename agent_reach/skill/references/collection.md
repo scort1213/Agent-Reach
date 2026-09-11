@@ -55,7 +55,11 @@ agent-reach collection-status --output TASK
 
 ## 每次浏览器任务前准备
 
-按实际发现工具检查连接。正式 Computer Use 路线使用当前 Agent 的浏览器工具检查、选择用户已确认的 Chrome；OpenCLI 的连接状态不能代表 Computer Use 可用或不可用。
+按实际发现工具检查连接。正式 Computer Use 路线包括原生 Chrome 窗口操作与 Chrome 网页接口；两者分开检查。原生窗口能读文字/点击，不证明网页接口可用；网页接口的 Statsig/request-header policy 初始化失败，也不证明原生窗口不可用。记录实际入口 `cua_native`、`chrome_browser`、`iab` 或 `opencli`，选择用户已确认的 Chrome 资料。
+
+先核对目标已有的拒绝记录。只有明确是入口初始化失败、且没有目标或宿主访问拒绝时，才可使用已授权的原生入口继续。未知错误不能自动换入口；明确拒绝须有正常恢复的证据才可继续。其他任务能操作无关网页不是目标访问已恢复的证据。
+
+原生界面负责取得实际可见的标题、作者、发布时间和分享链接，生成既有清单；不得把窗口能读判成目标发现成功。视频仍须取得已有读取器接受的播放器媒体地址或由正常可见下载功能保存的本地文件。缺媒体时保留 `needs_browser_media`，不把仅有Get原文写成完整视频分析。OpenCLI 的连接状态不能代表 Computer Use 可用或不可用。
 
 只有选择 OpenCLI 适配器时才运行 `agent-reach browser-ready --json`；该命令只准备 OpenCLI 扩展连接。needs_browser 时由 Agent 打开对应 Chrome 资料并确认扩展启用，再执行 `agent-reach browser-ready --wait 45 --json`。needs_profile 时先核对用户账号再选择资料。不要借用另一个已登录资料；doctor 只检查，不恢复连接。
 

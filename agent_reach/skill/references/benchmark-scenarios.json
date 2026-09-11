@@ -25,7 +25,15 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {
+      "discovery": [
+        "github_connector"
+      ],
+      "content": [
+        "github_connector"
+      ]
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "twitter",
@@ -60,7 +68,8 @@
       "content": [
         "opencli"
       ]
-    }
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "youtube",
@@ -90,9 +99,14 @@
     },
     "fallback_backends": {
       "content": [
-        "opencli"
+        "opencli",
+        "agent_computer_use"
+      ],
+      "discovery": [
+        "agent_computer_use"
       ]
-    }
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "reddit",
@@ -127,7 +141,8 @@
       "content": [
         "rdt_cli"
       ]
-    }
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "facebook",
@@ -155,7 +170,15 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {
+      "discovery": [
+        "agent_computer_use"
+      ],
+      "content": [
+        "agent_computer_use"
+      ]
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "instagram",
@@ -183,7 +206,15 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {
+      "discovery": [
+        "agent_computer_use"
+      ],
+      "content": [
+        "agent_computer_use"
+      ]
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "bilibili",
@@ -211,7 +242,15 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {
+      "discovery": [
+        "agent_computer_use"
+      ],
+      "content": [
+        "agent_computer_use"
+      ]
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "xiaohongshu",
@@ -242,13 +281,16 @@
     "fallback_backends": {
       "discovery": [
         "xiaohongshu_mcp",
-        "xhs_cli"
+        "xhs_cli",
+        "agent_computer_use"
       ],
       "content": [
         "xiaohongshu_mcp",
-        "xhs_cli"
+        "xhs_cli",
+        "agent_computer_use"
       ]
-    }
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "linkedin",
@@ -278,9 +320,14 @@
     },
     "fallback_backends": {
       "content": [
-        "jina"
+        "jina",
+        "agent_computer_use"
+      ],
+      "discovery": [
+        "agent_computer_use"
       ]
-    }
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "xiaoyuzhou",
@@ -310,7 +357,8 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {},
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "v2ex",
@@ -338,7 +386,8 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {},
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "xueqiu",
@@ -366,7 +415,15 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {
+      "discovery": [
+        "agent_computer_use"
+      ],
+      "content": [
+        "agent_computer_use"
+      ]
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "rss",
@@ -394,7 +451,8 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {},
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "toutiao",
@@ -423,7 +481,12 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {},
+    "allowed_actual_entries": [
+      "cua_native",
+      "chrome_browser"
+    ],
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "exa_search",
@@ -451,7 +514,8 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {},
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "web",
@@ -483,12 +547,13 @@
       "content": [
         "web_reader"
       ]
-    }
+    },
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "wechat",
     "discovery_task": "机器之心、AI信息Gap各20篇；新智元首次定位3篇",
-    "content_analysis_task": "每账号最多3篇，核对正文开头中段结尾并分析",
+    "content_analysis_task": "对实际取得的每篇正文核对开头中段结尾并分析；已知账号不得冒充首次定位",
     "rounds": 3,
     "max_candidates": 20,
     "route_group": "custom",
@@ -513,7 +578,8 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {},
+    "acceptance_basis": "task_completion_with_actual_entry"
   },
   {
     "platform": "douyin",
@@ -544,6 +610,11 @@
         "agent_review"
       ]
     },
-    "fallback_backends": {}
+    "fallback_backends": {},
+    "allowed_actual_entries": [
+      "cua_native",
+      "chrome_browser"
+    ],
+    "acceptance_basis": "task_completion_with_actual_entry"
   }
 ]

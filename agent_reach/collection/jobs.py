@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 
 import requests
 
+from .weread_helper.file_lock import exclusive_lock
+
 
 def save(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +133,11 @@ def collect(manifest: dict, output: Path, *, limit=None, all_available=False, us
     selected = select(manifest, limit, all_available)
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(output / "collection.lock"):
+        return _collect_locked(selected, output, use_get=use_get)
+
+
+def _collect_locked(selected: dict, output: Path, *, use_get: bool) -> dict:
     identity = {k: selected[k] for k in ["requested", "mode", "query", "captured_at"]}
     identity["ids"] = [i["video_id"] for i in selected["items"]]
     path = output / "job.json"

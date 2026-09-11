@@ -1,7 +1,6 @@
 """Public Xiaoyuzhou metadata and Get transcription; no private API or local ASR."""
 
 import contextlib
-import fcntl
 import hashlib
 import io
 import json
@@ -14,6 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from . import get_client
+from .weread_helper.file_lock import exclusive_lock
 
 URL = re.compile(r'https://www\.xiaoyuzhoufm\.com/(episode|podcast)/([a-f0-9]{24})/?\Z')
 
@@ -79,8 +79,7 @@ def collect(source, output, limit=20, no_submit=False, max_minutes=15,
         raise ValueError('数量和额度须为有效正数')
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    with (output / 'podcast.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_lock(output / 'podcast.lock'):
         existing = output / 'job.json'
         if existing.exists() and json.loads(existing.read_text()).get('identity') != [source, limit]:
             raise ValueError('输出目录属于另一任务')

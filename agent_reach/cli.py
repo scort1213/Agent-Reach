@@ -594,7 +594,7 @@ def _install_skill(force: bool = True):
 
             for ref_file in refs_pkg.iterdir():
                 name = ref_file.name if hasattr(ref_file, 'name') else str(ref_file).split('/')[-1]
-                if name.endswith(".md"):
+                if ref_file.is_file() and name.endswith((".md", ".json")):
                     content = ref_file.read_text(encoding="utf-8") if hasattr(ref_file, 'read_text') else ref_file.read_text()
                     with open(os.path.join(refs_target, name), "w", encoding="utf-8") as f:
                         f.write(content)

@@ -1,12 +1,12 @@
 """Standalone AGPL-3.0 helper; JSON input/output over a subprocess boundary."""
 
-import fcntl
 import hashlib
 import json
 import sys
 import time
 from pathlib import Path
 
+from file_lock import exclusive_lock
 from weread_client import ACCOUNT_RE, WeReadClient, WeReadError, atomic_json
 
 HOME = Path.home() / "Library/Application Support/WeReadArticleTool"
@@ -202,8 +202,7 @@ def _run(args, client):
 def run(args):
     home = Path(args.get("home", HOME))
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with (home / "session.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_lock(home / "session.lock"):
         client = WeReadClient(home / "login.json")
         try:
             return _run(args, client)

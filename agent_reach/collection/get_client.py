@@ -16,6 +16,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+if __package__:
+    from .weread_helper.file_lock import exclusive_lock
+else:  # Preserve direct script execution as well as python -m.
+    from weread_helper.file_lock import exclusive_lock
+
 BASE = "https://openapi.biji.com/open/api/v1"
 CONFIG = Path.home() / "Library/Application Support/AgentReachGetNote/credentials.json"
 
@@ -101,6 +106,13 @@ def main(args=None):
         raise SystemExit("Usage: get_pipeline.py OUTPUT LABEL URL [LABEL URL ...]")
     root = Path(args[0])
     root.mkdir(parents=True, exist_ok=True)
+    # The collection parent holds collection.lock (or podcast.lock), never
+    # this lock. Concurrent direct invocations must share the Get state guard.
+    with exclusive_lock(root / "get.lock"):
+        return _main_locked(args, root)
+
+
+def _main_locked(args, root):
     client = Client()
     pending = []
     for label, url in zip(args[1::2], args[2::2]):
