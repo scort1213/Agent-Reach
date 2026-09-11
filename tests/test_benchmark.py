@@ -174,17 +174,19 @@ def test_chinese_cli_records_roundtrip_in_non_utf8_new_process(tmp_path):
     from agent_reach import benchmark
 
     script = textwrap.dedent('''
-        import io, json, sys
+        import json, sys
         from pathlib import Path
         from agent_reach import benchmark
 
-        original_open = io.open
-        def legacy_open(file, mode='r', buffering=-1, encoding=None, errors=None,
-                        newline=None, closefd=True, opener=None):
+        # Path.open is the stable seam across Python versions; 3.10's accessor
+        # retains its own reference to io.open after io.open is monkeypatched.
+        original_open = Path.open
+        def legacy_open(self, mode='r', buffering=-1, encoding=None, errors=None,
+                        newline=None):
             if 'b' not in mode and encoding in (None, 'locale'):
                 encoding = 'cp1252'
-            return original_open(file, mode, buffering, encoding, errors, newline, closefd, opener)
-        io.open = legacy_open
+            return original_open(self, mode, buffering, encoding, errors, newline)
+        Path.open = legacy_open
         root = Path(sys.argv[1])
         text = '标题证据说明文章的具体来源。正文证据包含可核对的完整中文内容。'
         try:
