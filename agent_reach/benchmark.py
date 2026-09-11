@@ -15,12 +15,15 @@ import os
 import re
 import signal
 import subprocess
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
+
+from agent_reach.utils.process import utf8_subprocess_env
 
 FAILURE_KINDS = {
     'initialization', 'login_required', 'adapter_error', 'incomplete_content',
@@ -61,7 +64,7 @@ def safe_argv(argv):
 def write(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix('.tmp')
-    temp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8', newline='\n')
     temp.replace(path)
 
 
@@ -89,6 +92,35 @@ def _explicit_denial(stdout, stderr):
     return False
 
 
+def _stop_process_tree(proc):
+    """Stop the timed-out command and its children using the host's process API."""
+    if sys.platform == 'win32':
+        try:
+            stopped = subprocess.run(
+                ['taskkill', '/PID', str(proc.pid), '/T', '/F'],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5,
+                check=False,
+            )
+            if stopped.returncode == 0:
+                return 'process tree stopped'
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    else:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+            return 'process group stopped'
+        except ProcessLookupError:
+            return 'process group already exited'
+        except OSError:
+            pass
+    # Cleanup itself must not hide the original timeout or claim all children died.
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    return 'parent stop requested; process-tree cleanup unconfirmed'
+
+
 def run_case(case, output, round_name):
     if not re.fullmatch(r"[\w-]+", case['id']) or not re.fullmatch(r"[\w-]+", round_name):
         raise ValueError('Invalid case or round identifier')
@@ -112,30 +144,43 @@ def run_case(case, output, round_name):
         if case.get('blocked_reason'):
             result.update(transport='not_attempted', blocked_reason=case['blocked_reason'])
         elif case.get('evidence_file'):
-            stdout = Path(case['evidence_file']).read_text()
+            stdout = Path(case['evidence_file']).read_text(encoding='utf-8')
             result.update(transport='imported', provenance=case.get('provenance', 'Agent observation'))
         else:
             argv = case['argv']
             if not isinstance(argv, list) or not argv or any(not isinstance(x, str) for x in argv):
                 raise ValueError('Expected trusted argv array')
             safe_argv(argv)
-            env = os.environ.copy()
+            env = utf8_subprocess_env()
             if case.get('path_prefix'):
                 env['PATH'] = case['path_prefix'] + os.pathsep + env.get('PATH', '')
             proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    text=True, env=env, start_new_session=True)
+                                    text=True, encoding='utf-8', errors='replace', env=env,
+                                    start_new_session=sys.platform != 'win32')
             try:
                 stdout, stderr = proc.communicate(timeout=case.get('timeout', 60))
             except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, signal.SIGKILL)
-                stdout, stderr = proc.communicate()
+                cleanup = _stop_process_tree(proc)
+                try:
+                    stdout, stderr = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired as error:
+                    # A surviving descendant may still own inherited output pipes.
+                    stdout = error.stdout.decode('utf-8', errors='replace') if isinstance(error.stdout, bytes) else error.stdout or ''
+                    stderr = error.stderr.decode('utf-8', errors='replace') if isinstance(error.stderr, bytes) else error.stderr or ''
+                    # Windows communicate() has background pipe readers; closing their
+                    # locked streams here can block on a surviving descendant again.
+                    if sys.platform != 'win32':
+                        for pipe in (proc.stdout, proc.stderr):
+                            if pipe:
+                                pipe.close()
+                    cleanup += '; output drain timed out'
                 result['transport'] = 'timeout'
-                stderr += '\nCommand timed out; process group stopped'
+                stderr += '\nCommand timed out; ' + cleanup
             else:
                 result.update(transport='returned' if proc.returncode == 0 else 'command_failed', exit_code=proc.returncode)
             result['argv'] = [scrub(x) for x in argv]
     except subprocess.TimeoutExpired as error:
-        stdout = error.stdout.decode(errors='replace') if isinstance(error.stdout, bytes) else error.stdout or ''
+        stdout = error.stdout.decode('utf-8', errors='replace') if isinstance(error.stdout, bytes) else error.stdout or ''
         stderr = 'Command timed out'
         result['transport'] = 'timeout'
     except FileNotFoundError:
@@ -151,7 +196,7 @@ def run_case(case, output, round_name):
         result.setdefault('failure_stage', case['stage'])
     result['elapsed_s'] = round(time.monotonic() - started, 3)
     evidence = folder / 'evidence.txt'
-    evidence.write_text(scrub(stdout) + '\n\nSTDERR:\n' + scrub(stderr))
+    evidence.write_text(scrub(stdout) + '\n\nSTDERR:\n' + scrub(stderr), encoding='utf-8', newline='\n')
     result.update(evidence=str(evidence), evidence_sha256=hashlib.sha256(evidence.read_bytes()).hexdigest())
     write(folder / 'result.json', result)
     return folder / 'result.json'
@@ -159,7 +204,7 @@ def run_case(case, output, round_name):
 
 def review(result_path, assessment):
     path = Path(result_path)
-    result = json.loads(path.read_text())
+    result = json.loads(path.read_text(encoding='utf-8'))
     evidence = Path(result['evidence'])
     if hashlib.sha256(evidence.read_bytes()).hexdigest() != result['evidence_sha256']:
         raise ValueError('Evidence changed')
@@ -177,7 +222,7 @@ def review(result_path, assessment):
         if result.get('failure_kind') or failure:
             raise ValueError('Failure observation cannot pass; record a separate recovery attempt')
         quotes = assessment.get('quotes', [])
-        if len(set(quotes)) < 2 or any(len(q.strip()) < 8 or q not in evidence.read_text() for q in quotes):
+        if len(set(quotes)) < 2 or any(len(q.strip()) < 8 or q not in evidence.read_text(encoding='utf-8') for q in quotes):
             raise ValueError('Pass needs two actual evidence quotes')
         if result['stage'] == 'analysis' and not all(assessment.get(k) for k in ['conclusion', 'value', 'limitations']):
             raise ValueError('Analysis needs conclusion, value and limitations')
@@ -316,7 +361,7 @@ def _recovered(candidate, failure, *, explicit=False):
     if recovery.get('kind') != 'normal_access_restored' or not recovery.get('reason'):
         return False
     try:
-        evidence = Path(candidate['evidence']).read_text()
+        evidence = Path(candidate['evidence']).read_text(encoding='utf-8')
     except OSError:
         return False
     quotes = recovery.get('quotes', [])
@@ -427,7 +472,7 @@ def route_assessments(rows, planned):
 
 
 def summary(output):
-    rows = [json.loads(p.read_text()) for p in Path(output).glob('*/*/result.json')]
+    rows = [json.loads(p.read_text(encoding='utf-8')) for p in Path(output).glob('*/*/result.json')]
     platforms: dict[str, Any] = {}
     for row in rows:
         group = platforms.setdefault(row['platform'], {'observations': 0, 'passed': 0, 'unreviewed': 0, 'cases': {}})
@@ -444,7 +489,7 @@ def summary(output):
     manifest = Path(output) / 'run.json'
     planned = {}
     if manifest.exists():
-        planned = json.loads(manifest.read_text())
+        planned = json.loads(manifest.read_text(encoding='utf-8'))
         for route in planned.get('planned_routes', []):
             platform = route['platform']
             observed = [r for r in rows if r['platform'] == platform]
@@ -465,7 +510,7 @@ def summary(output):
 
 def run_cases(cases, output, round_name):
     """Only explicit denials stop dependent access; initialization is entry-local."""
-    existing = [json.loads(p.read_text()) for p in Path(output).glob('*/*/result.json')]
+    existing = [json.loads(p.read_text(encoding='utf-8')) for p in Path(output).glob('*/*/result.json')]
     denied = [r for r in existing if r.get('failure_kind') == 'access_denied' and not any(
         candidate.get('platform') == r['platform'] and candidate.get('assessment') == 'pass'
         and _scope_matches(r, candidate) and _intact(candidate.get('evidence'), candidate.get('evidence_sha256'))
@@ -478,13 +523,16 @@ def run_cases(cases, output, round_name):
                         failure_kind='access_denied', failure_stage=case['stage'],
                         failure_scope=failure.get('failure_scope', case['platform']))
         path = run_case(case, output, round_name)
-        result = json.loads(path.read_text())
+        result = json.loads(path.read_text(encoding='utf-8'))
         if result.get('failure_kind') == 'access_denied':
             denied.append(result)
         yield path
 
 
 def main():
+    # Machine-readable CLI output must not inherit a legacy Windows code page.
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
     p = sub.add_parser('run')
@@ -498,10 +546,10 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.action == 'run':
-        for path in run_cases(json.loads(args.cases.read_text()), args.output, args.round):
+        for path in run_cases(json.loads(args.cases.read_text(encoding='utf-8')), args.output, args.round):
             print(json.dumps({'result': str(path)}, ensure_ascii=False), flush=True)
     elif args.action == 'review':
-        print(json.dumps(review(args.result, json.loads(args.assessment.read_text())), ensure_ascii=False))
+        print(json.dumps(review(args.result, json.loads(args.assessment.read_text(encoding='utf-8'))), ensure_ascii=False))
     else:
         print(json.dumps(summary(args.output), ensure_ascii=False, indent=2))
 

@@ -27,7 +27,7 @@ def test_real_skill_install_copies_benchmark_scenarios(tmp_path, monkeypatch, lo
     for resource in references.iterdir():
         if resource.is_file() and resource.name.endswith((".md", ".json")):
             assert (target / "references" / resource.name).read_text(encoding="utf-8") == resource.read_text(encoding="utf-8")
-    scenarios = json.loads((target / "references/benchmark-scenarios.json").read_text())
+    scenarios = json.loads((target / "references/benchmark-scenarios.json").read_text(encoding="utf-8"))
     assert len(scenarios) == 18
     assert sum(s["route_group"] == "custom" for s in scenarios) == 3
     assert sum(s["route_group"] == "original" for s in scenarios) == 15

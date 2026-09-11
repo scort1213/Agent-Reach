@@ -60,14 +60,14 @@ def extract(path, root=None):
         "base_frame_limit": 48,
         "analysis_status": "unreviewed",
     }
-    (root / "frames.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
+    (root / "frames.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     print(path.stem, "duration", round(duration, 3), "frames", len(rows), flush=True)
 
 
 def supplement(video, frames_path, targets):
     """Append at most eight targeted frames in total, before video cleanup."""
     video, frames_path = Path(video), Path(frames_path)
-    data = json.loads(frames_path.read_text())
+    data = json.loads(frames_path.read_text(encoding="utf-8"))
     if hashlib.sha256(video.read_bytes()).hexdigest() != data["sha256"]:
         raise ValueError("视频已变化，不能补帧")
     used = sum(bool(row.get("supplemental")) for row in data["frames"])
@@ -97,7 +97,7 @@ def supplement(video, frames_path, targets):
                     )
                     break
     tmp = frames_path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     tmp.replace(frames_path)
     return {
         "status": "awaiting_analysis",

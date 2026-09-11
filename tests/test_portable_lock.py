@@ -102,6 +102,7 @@ def test_weread_helper_runs_as_standalone_folder_without_main_package(tmp_path):
         "import runpy, sys; "
         "sys.modules['agent_reach'] = None; "
         "sys.path.insert(0, sys.argv[1]); "
+        "sys.stdout.reconfigure(encoding='cp1252'); "
         "runpy.run_path(sys.argv[1] + '/run.py', run_name='__main__')"
     )
     result = subprocess.run(
@@ -109,6 +110,7 @@ def test_weread_helper_runs_as_standalone_folder_without_main_package(tmp_path):
         input=json.dumps({"home": str(tmp_path / "fresh-session"), "account": "fixture"}),
         capture_output=True, text=True, cwd=tmp_path, env=env, timeout=15, check=True,
     )
+    assert result.stdout.isascii(), "helper protocol must not depend on console codepage"
     assert json.loads(result.stdout)["status"] == "login_required", result.stderr
 
 

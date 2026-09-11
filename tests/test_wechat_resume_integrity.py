@@ -60,14 +60,14 @@ def test_resume_does_not_claim_missing_or_changed_body(helper, tmp_path, damage)
     if damage == "missing":
         body.unlink()
     else:
-        body.write_text("用户编辑")
+        body.write_text("用户编辑", encoding="utf-8")
     state = helper._run(args(tmp_path), c)
     assert state["status"] == "partial"
     assert state["body_saved"] == 0
     assert state["items"][0]["error"]["code"] == "saved_body_changed_or_missing"
     assert c.calls == 1
     if damage == "changed":
-        assert body.read_text() == "用户编辑"
+        assert body.read_text(encoding="utf-8") == "用户编辑"
 
 
 def test_missing_report_returns_to_analysis_without_refetch(helper, tmp_path):

@@ -81,7 +81,7 @@ def collect(source, output, limit=20, no_submit=False, max_minutes=15,
     output.mkdir(parents=True, exist_ok=True)
     with exclusive_lock(output / 'podcast.lock'):
         existing = output / 'job.json'
-        if existing.exists() and json.loads(existing.read_text()).get('identity') != [source, limit]:
+        if existing.exists() and json.loads(existing.read_text(encoding="utf-8")).get('identity') != [source, limit]:
             raise ValueError('输出目录属于另一任务')
         try:
             if audio_note_title:
@@ -94,7 +94,7 @@ def collect(source, output, limit=20, no_submit=False, max_minutes=15,
             return _collect(source, output, limit, no_submit, max_minutes, prepare_audio, audio_note_id)
         except (ValueError, RuntimeError, requests.RequestException, OSError) as error:
             path = output / 'job.json'
-            state = json.loads(path.read_text()) if path.exists() else {'platform': 'xiaoyuzhou'}
+            state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {'platform': 'xiaoyuzhou'}
             state.setdefault('failures', []).append({'type': type(error).__name__})
             state.update(status='blocked', error={'type': type(error).__name__,
                          'message': str(error) if isinstance(error, (ValueError, RuntimeError))
@@ -108,7 +108,7 @@ def _collect(source, output, limit, no_submit, max_minutes, prepare_audio, audio
         raise ValueError('转写分钟数须为正数')
     path = output / 'job.json'
     if path.exists():
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         if state.get('identity') != [source, limit]:
             raise ValueError('输出目录属于另一任务')
     else:
@@ -144,7 +144,7 @@ def _collect(source, output, limit, no_submit, max_minutes, prepare_audio, audio
             if not isinstance(original, str) or not original.strip():
                 raise ValueError('该笔记没有音频原文，不能验收')
             target = output / (item['episode_id'] + '-audio.original.txt')
-            target.write_text(original)
+            target.write_text(original, encoding="utf-8", newline="\n")
             item.update(status='awaiting_analysis', original_file=str(target),
                         original_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
                         note_id=audio_note_id, identity_verification='agent_required')
@@ -188,7 +188,7 @@ def _collect(source, output, limit, no_submit, max_minutes, prepare_audio, audio
                 get_client.save(path, state)
             with contextlib.redirect_stdout(io.StringIO()):
                 get_client.main([str(output), item['episode_id'], item['url']])
-            record = json.loads(record_path.read_text())
+            record = json.loads(record_path.read_text(encoding="utf-8"))
             item['get_record'] = str(record_path)
             item['note_id'] = record.get('note_id')
             fields = record.get('fields', {})
@@ -212,14 +212,14 @@ def _collect(source, output, limit, no_submit, max_minutes, prepare_audio, audio
 
 def review(output, data):
     path = output / 'job.json'
-    state = json.loads(path.read_text())
+    state = json.loads(path.read_text(encoding="utf-8"))
     item = next(i for i in state['items'] if i['episode_id'] == data['episode_id'])
     if item['status'] != 'awaiting_analysis':
         raise ValueError('单集尚无待验收原文')
     original = Path(item['original_file'])
     if hashlib.sha256(original.read_bytes()).hexdigest() != item['original_sha256']:
         raise ValueError('原文已变化，重新核对')
-    text = original.read_text()
+    text = original.read_text(encoding="utf-8")
     if data.get('identity_verified') is not True or data.get('full_audio_verified') is not True:
         raise ValueError('Agent须确认单集身份及完整音频内容，不以节目说明验收')
     required = ['quote', 'conclusion', 'value', 'structure', 'doubts']
@@ -229,7 +229,7 @@ def review(output, data):
         raise ValueError('引文不在原文中')
     target = output / (item['episode_id'] + '-analysis.md')
     target.write_text('# ' + item['title'] + '\n\n来源：' + item['url'] + '\n\n' +
-                      '\n\n'.join(f'## {k}\n\n{data[k]}' for k in required))
+                      '\n\n'.join(f'## {k}\n\n{data[k]}' for k in required), encoding="utf-8", newline="\n")
     item.update(status='complete', report=str(target),
                 review_method=data.get('review_method', 'agent_content_review'))
     state['status'] = 'complete' if state.get('selection_fulfilled') and all(i['status'] == 'complete' for i in state['items']) else 'partial'

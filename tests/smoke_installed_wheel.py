@@ -22,7 +22,7 @@ def main():
     references = package.joinpath("skill/references")
     skill += "\n".join(p.read_text(encoding="utf-8") for p in references.iterdir()
                        if p.name.endswith(".md"))
-    scenarios = json.loads(package.joinpath("skill/references/benchmark-scenarios.json").read_text())
+    scenarios = json.loads(package.joinpath("skill/references/benchmark-scenarios.json").read_text(encoding="utf-8"))
     assert len(scenarios) == 18 and len({s["platform"] for s in scenarios}) == 18
     assert sum(s["route_group"] == "custom" for s in scenarios) == 3
     assert sum(s["route_group"] == "original" for s in scenarios) == 15
@@ -64,7 +64,7 @@ def main():
             assert _install_skill() is True
         installed = isolated_home / ".codex/skills/agent-reach"
         assert (installed / "SKILL.md").is_file()
-        assert json.loads((installed / "references/benchmark-scenarios.json").read_text()) == scenarios
+        assert json.loads((installed / "references/benchmark-scenarios.json").read_text(encoding="utf-8")) == scenarios
         for reference in references.iterdir():
             if reference.is_file() and reference.name.endswith((".md", ".json")):
                 assert (installed / "references" / reference.name).read_text(encoding="utf-8") == reference.read_text(encoding="utf-8")

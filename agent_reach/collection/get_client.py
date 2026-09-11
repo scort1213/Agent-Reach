@@ -44,7 +44,7 @@ def original_fields(note):
 
 class Client:
     def __init__(self):
-        self.config = json.loads(CONFIG.read_text())
+        self.config = json.loads(CONFIG.read_text(encoding="utf-8"))
         self.last_request = 0.0
 
     def request(self, path, payload=None, *, create=False):
@@ -96,7 +96,7 @@ class Client:
 
 def save(path, record):
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2))
+    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     tmp.replace(path)
 
 
@@ -122,7 +122,7 @@ def _main_locked(args, root):
             raise ValueError("Expected official Douyin or public Xiaoyuzhou episode URL")
         path = root / (label + ".json")
         if path.exists():
-            record = json.loads(path.read_text())
+            record = json.loads(path.read_text(encoding="utf-8"))
             if record["url"] != url:
                 raise ValueError("Existing label belongs to another URL")
             if record.get("status") == "original_returned":
@@ -205,7 +205,7 @@ def _main_locked(args, root):
                 )
                 for field, text in fields.items():
                     target = root / (record["label"] + "-" + field + ".txt")
-                    target.write_text(text)
+                    target.write_text(text, encoding="utf-8", newline="\n")
                     chinese = len(re.findall(r"[\u4e00-\u9fff]", text))
                     record["fields"][field] = {
                         "characters": len(text),
@@ -237,7 +237,7 @@ def _main_locked(args, root):
                                 "quality_warning",
                             ]
                         },
-                        ensure_ascii=False,
+                        ensure_ascii=True,
                     ),
                     flush=True,
                 )
@@ -264,7 +264,7 @@ def _main_locked(args, root):
         )
     # Transport completion is not evidence of a usable transcript.
     for label in args[1::2]:
-        record = json.loads((root / (label + ".json")).read_text())
+        record = json.loads((root / (label + ".json")).read_text(encoding="utf-8"))
         if record.get("status") != "original_returned" or record.get("quality_warning"):
             return 2
     return 0

@@ -61,7 +61,7 @@ def run(args):
             payload = (
                 {
                     "action": "login_check" if args.check else "login_start",
-                    "otp": args.otp_file.read_text().strip() if args.otp_file else "",
+                    "otp": args.otp_file.read_text(encoding="utf-8").strip() if args.otp_file else "",
                 }
                 if args.command == "wechat-login"
                 else {
@@ -78,6 +78,7 @@ def run(args):
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 check=False,
             )
             if result.returncode:
@@ -92,7 +93,7 @@ def run(args):
             from .jobs import collect
 
             state = collect(
-                json.loads(Path(args.source).read_text()),
+                json.loads(Path(args.source).read_text(encoding="utf-8")),
                 args.output,
                 limit=args.limit,
                 all_available=args.all_available,
@@ -101,18 +102,18 @@ def run(args):
         elif args.command == "collection-frames":
             from .frames import supplement
 
-            job = json.loads((args.output / "job.json").read_text())
+            job = json.loads((args.output / "job.json").read_text(encoding="utf-8"))
             item = next(i for i in job["items"] if i["video_id"] == args.video_id)
             state = supplement(item["video_file"], item["frames"], args.seconds)
         elif args.command == "collection-review":
             from .jobs import finalize
 
-            job = json.loads((args.output / "job.json").read_text())
+            job = json.loads((args.output / "job.json").read_text(encoding="utf-8"))
             if job.get("platform") == "xiaoyuzhou":
                 from .podcast import review as finalize
-            state = finalize(args.output, json.loads(args.review.read_text()))
+            state = finalize(args.output, json.loads(args.review.read_text(encoding="utf-8")))
         else:
-            state = json.loads((args.output / "job.json").read_text())
+            state = json.loads((args.output / "job.json").read_text(encoding="utf-8"))
         print(json.dumps(state, ensure_ascii=False, indent=2))
         return 0 if state["status"] in {"complete", "awaiting_analysis", "account_resolved", "ready", "discovered"} else 2
     except (ValueError, KeyError, OSError, StopIteration) as error:

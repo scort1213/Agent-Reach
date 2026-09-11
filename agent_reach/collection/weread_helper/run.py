@@ -39,7 +39,7 @@ def login(client, home, args):
         }
     if not pending.exists():
         return {"status": "login_required", "message": "请先运行 wechat-login 生成二维码"}
-    data = json.loads(pending.read_text())
+    data = json.loads(pending.read_text(encoding="utf-8"))
     if time.time() - data["created_at"] > 300:
         return {"status": "login_expired", "message": "二维码已过期，请重新运行 wechat-login"}
     for c in data["cookies"]:
@@ -70,7 +70,7 @@ def _run(args, client):
         }
     client.prepare()
     cache_path = home / "accounts.json"
-    cached = json.loads(cache_path.read_text()) if cache_path.exists() else []
+    cached = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else []
     query = args["account"]
     if ACCOUNT_RE.fullmatch(query):
         account = client.account_info(query)
@@ -110,7 +110,7 @@ def _run(args, client):
         raise ValueError("数量须为正整数")
     identity = [account["id"], "all" if all_available else limit]
     if path.exists():
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         if state["identity"] != identity:
             raise ValueError("输出目录属于其他任务")
     else:
@@ -158,7 +158,8 @@ def _run(args, client):
                 text = body["text"]
                 dest = output / (article["id"] + ".md")
                 dest.write_text(
-                    f"# {article['title']}\n\n公众号：{account['name']}\n发布时间：{article.get('published')}\n\n{text}\n"
+                    f"# {article['title']}\n\n公众号：{account['name']}\n发布时间：{article.get('published')}\n\n{text}\n",
+                    encoding="utf-8", newline="\n",
                 )
                 article.update(
                     status="body_saved",
@@ -223,4 +224,5 @@ if __name__ == "__main__":
                 "message": "读取失败；检查登录、数据格式或依赖",
             },
         }
-    print(json.dumps(result, ensure_ascii=False))
+    # ASCII JSON keeps the subprocess protocol independent of console codepage.
+    print(json.dumps(result, ensure_ascii=True))

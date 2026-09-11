@@ -70,6 +70,170 @@ def test_timeout_and_missing_dependency(tmp_path):
     assert json.loads(p.read_text())['transport'] == 'missing_dependency'
 
 
+def test_timeout_stops_descendant_with_inherited_output_pipes(tmp_path):
+    import time
+
+    marker = tmp_path / 'child-survived.txt'
+    child = 'import sys,time;from pathlib import Path;time.sleep(2.5);Path(sys.argv[1]).write_bytes(b"survived")'
+    parent = ('import subprocess,sys,time;'
+              f'subprocess.Popen([sys.executable,"-c",{child!r},{str(marker)!r}]);'
+              'print("child launched",flush=True);time.sleep(30)')
+    started = time.monotonic()
+    p = run_case(case(timeout=1.5, argv=[sys.executable, '-c', parent]), tmp_path, 'r1')
+    result = json.loads(p.read_text(encoding='utf-8'))
+    assert result['transport'] == 'timeout'
+    assert result['failure_kind'] == 'timeout'
+    assert 'child launched' in Path(result['evidence']).read_text(encoding='utf-8')
+    assert time.monotonic() - started < 8
+    time.sleep(2.6)
+    assert not marker.exists(), 'The timed-out benchmark left its child running'
+
+
+def test_windows_timeout_uses_taskkill_tree_without_unix_signals(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    stop = Mock(return_value=SimpleNamespace(returncode=0))
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(benchmark.subprocess, 'run', stop)
+    monkeypatch.setattr(benchmark.os, 'killpg', Mock(side_effect=AssertionError('Unix API on Windows')), raising=False)
+    assert benchmark._stop_process_tree(proc) == 'process tree stopped'
+    assert stop.call_args.args[0] == ['taskkill', '/PID', '1234', '/T', '/F']
+    assert stop.call_args.kwargs['timeout'] == 5
+    proc.kill.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', ['missing', 'timeout', 'nonzero'])
+def test_windows_tree_cleanup_failure_preserves_parent_stop(monkeypatch, failure):
+    import subprocess
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    stop = Mock(return_value=SimpleNamespace(returncode=1))
+    if failure == 'missing':
+        stop.side_effect = FileNotFoundError('taskkill')
+    elif failure == 'timeout':
+        stop.side_effect = subprocess.TimeoutExpired('taskkill', 5)
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(benchmark.subprocess, 'run', stop)
+    assert benchmark._stop_process_tree(proc) == 'parent stop requested; process-tree cleanup unconfirmed'
+    proc.kill.assert_called_once_with()
+
+
+def test_windows_unconfirmed_cleanup_records_timeout_without_unbounded_pipe_wait(tmp_path, monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    proc.communicate.side_effect = [subprocess.TimeoutExpired('fake', 1),
+                                    subprocess.TimeoutExpired('fake', 5, output=b'partial evidence', stderr=b'child output')]
+    launch = Mock(return_value=proc)
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(benchmark.subprocess, 'Popen', launch)
+    monkeypatch.setattr(benchmark, '_stop_process_tree', lambda p: 'parent stop requested; process-tree cleanup unconfirmed')
+    p = run_case(case(argv=['fake'], timeout=1), tmp_path, 'r1')
+    row = json.loads(p.read_text(encoding='utf-8'))
+    evidence = Path(row['evidence']).read_text(encoding='utf-8')
+    assert row['transport'] == row['failure_kind'] == 'timeout'
+    assert 'partial evidence' in evidence and 'cleanup unconfirmed; output drain timed out' in evidence
+    assert launch.call_args.kwargs['start_new_session'] is False
+    assert launch.call_args.kwargs['env']['PYTHONIOENCODING'] == 'utf-8'
+    assert [c.kwargs['timeout'] for c in proc.communicate.call_args_list] == [1, 5]
+    proc.stdout.close.assert_not_called()
+    proc.stderr.close.assert_not_called()
+
+
+def test_posix_timeout_process_exit_race_is_not_an_error(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='linux'))
+    monkeypatch.setattr(benchmark.os, 'killpg', Mock(side_effect=ProcessLookupError()), raising=False)
+    monkeypatch.setattr(benchmark.signal, 'SIGKILL', 9, raising=False)
+    assert benchmark._stop_process_tree(proc) == 'process group already exited'
+    proc.kill.assert_not_called()
+
+
+def test_chinese_cli_records_roundtrip_in_non_utf8_new_process(tmp_path):
+    import os
+    import subprocess
+    import textwrap
+
+    from agent_reach import benchmark
+
+    script = textwrap.dedent('''
+        import io, json, sys
+        from pathlib import Path
+        from agent_reach import benchmark
+
+        original_open = io.open
+        def legacy_open(file, mode='r', buffering=-1, encoding=None, errors=None,
+                        newline=None, closefd=True, opener=None):
+            if 'b' not in mode and encoding in (None, 'locale'):
+                encoding = 'cp1252'
+            return original_open(file, mode, buffering, encoding, errors, newline, closefd, opener)
+        io.open = legacy_open
+        root = Path(sys.argv[1])
+        text = '标题证据说明文章的具体来源。正文证据包含可核对的完整中文内容。'
+        try:
+            (root / 'legacy.txt').write_text(text)
+        except UnicodeEncodeError:
+            pass
+        else:
+            raise AssertionError('Legacy default simulation is not active')
+        source = root / '正文.txt'
+        source.write_bytes(text.encode('utf-8'))
+        task = {'platform': 'test', 'stage': 'analysis', 'task': '分析公众号中文正文',
+                'cache': 'fresh_request'}
+        cases = [dict(task, id='imported', evidence_file=str(source)),
+                 dict(task, id='executed', argv=[sys.executable, '-c', 'print(' + repr(text) + ')'])]
+        cases_file = root / '任务.json'
+        cases_file.write_bytes(json.dumps(cases, ensure_ascii=False).encode('utf-8'))
+        output = root / '中文输出'
+        sys.argv = ['benchmark', 'run', str(cases_file), '--output', str(output), '--round', 'r1']
+        benchmark.main()
+        assessment = {'verdict': 'pass', 'reason': '已核对原文与分析报告',
+                      'quotes': ['标题证据说明文章的具体来源', '正文证据包含可核对的完整中文内容'],
+                      'conclusion': '中文结论', 'value': '中文价值', 'limitations': '中文疑点'}
+        report = root / '中文分析报告.json'
+        report.write_bytes(json.dumps(assessment, ensure_ascii=False).encode('utf-8'))
+        results = list(output.glob('*/*/result.json'))
+        assert len(results) == 2
+        for result in results:
+            row = json.loads(result.read_bytes().decode('utf-8'))
+            assert row['task'] == task['task']
+            assert text in Path(row['evidence']).read_bytes().decode('utf-8')
+            assert b'\\r\\n' not in Path(row['evidence']).read_bytes()
+            sys.argv = ['benchmark', 'review', str(result), str(report)]
+            benchmark.main()
+            reviewed = json.loads(result.read_bytes().decode('utf-8'))
+            assert reviewed['review']['conclusion'] == '中文结论'
+        sys.argv = ['benchmark', 'summary', '--output', str(output)]
+        benchmark.main()
+        assert benchmark.summary(output)['platforms']['test']['passed'] == 2
+        print('UTF8_ROUNDTRIP_OK')
+    ''')
+    env = dict(os.environ, PYTHONUTF8='0', PYTHONIOENCODING='cp1252', PYTHONCOERCECLOCALE='0')
+    completed = subprocess.run([sys.executable, '-X', 'utf8=0', '-c', script, str(tmp_path)],
+                               cwd=Path(benchmark.__file__).parents[1], env=env,
+                               capture_output=True, encoding='utf-8', errors='replace', timeout=30)
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.rstrip().endswith('UTF8_ROUNDTRIP_OK')
+    assert '中文结论' in completed.stdout
+
+
 def test_scrubbing():
     value = scrub('gk_live_dummy.secret\nAuthorization: Bearer secret\napi_key=secret\nCookie: private\npublic body')
     assert 'secret' not in value and 'private' not in value
