@@ -1,5 +1,6 @@
 """Standalone AGPL-3.0 helper; JSON input/output over a subprocess boundary."""
 
+import fcntl
 import hashlib
 import json
 import sys
@@ -58,9 +59,8 @@ def login(client, home, args):
     }
 
 
-def run(args):
+def _run(args, client):
     home = Path(args.get("home", HOME))
-    client = WeReadClient(home / "login.json")
     if args.get("action", "").startswith("login_"):
         return login(client, home, args)
     if not client.load():
@@ -68,8 +68,7 @@ def run(args):
             "status": "login_required",
             "message": "请运行 agent-reach wechat-login；Agent展示二维码，确认后使用 --check 保存登录",
         }
-    client.validate()
-    client.renew()
+    client.prepare()
     cache_path = home / "accounts.json"
     cached = json.loads(cache_path.read_text()) if cache_path.exists() else []
     query = args["account"]
@@ -176,7 +175,21 @@ def run(args):
     if state["items"] and completed == len(state["items"]):
         state["status"] = "complete" if state["selection_fulfilled"] else "partial"
     atomic_json(path, state)
+    state["diagnostics"] = client.trace
+    atomic_json(path, state)
     return state
+
+
+def run(args):
+    home = Path(args.get("home", HOME))
+    home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (home / "session.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        client = WeReadClient(home / "login.json")
+        try:
+            return _run(args, client)
+        finally:
+            atomic_json(home / "last-diagnostics.json", {"requests": client.trace})
 
 
 if __name__ == "__main__":

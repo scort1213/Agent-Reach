@@ -67,7 +67,9 @@
     "discovery_task": "人工智能播客3条",
     "content_analysis_task": "读单集详情和转写，区别shownotes与逐字稿",
     "rounds": 3,
-    "max_candidates": 3
+    "max_candidates": 3,
+    "discovery_backend": "public_page",
+    "content_backend": "get_link_or_authorized_audio_import"
   },
   {
     "platform": "v2ex",
@@ -123,6 +125,8 @@
     "discovery_task": "Fred博主与AI Agent近24h",
     "content_analysis_task": "发现3条，1条≤5分钟Get转写+抽帧+分析",
     "rounds": 3,
-    "max_candidates": 3
+    "max_candidates": 3,
+    "discovery_backend": "agent_computer_use",
+    "optional_adapter": "opencli; separate assessment, not equivalent to formal discovery"
   }
 ]
