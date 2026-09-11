@@ -220,12 +220,71 @@ class WeReadClient:
         self.api_key = ""
         self.extra_headers: dict[str, str] = {}
         self.validated = False
+        self.recovery_used = False
+        self.trace: list[dict[str, Any]] = []
 
     @property
     def logged_in(self):
         return bool(self.vid and self.session.cookies.get_dict().get("wr_skey"))
 
-    def request(
+    def normalize_cookies(self, fresh=()):
+        # Only a response from the allowed WeRead host can replace this session.
+        selected = {}
+        for cookie in [*cast(Any, self.session.cookies), *fresh]:
+            if cookie.domain.lstrip(".") == "weread.qq.com":
+                selected[cookie.name] = cookie
+        for cookie in list(cast(Any, self.session.cookies)):
+            if cookie.domain.lstrip(".") == "weread.qq.com":
+                self.session.cookies.clear(cookie.domain, cookie.path, cookie.name)
+        for cookie in selected.values():
+            self.session.cookies.set_cookie(copy.copy(cookie))
+
+    def prepare(self):
+        try:
+            self.validate()
+        except WeReadError as error:
+            if error.code != "-2012":
+                raise
+            self.recover(error.code)
+        self.save()
+
+    def recover(self, code):
+        if self.recovery_used:
+            raise WeReadError(code, "本任务登录恢复已尝试一次，停止重试。")
+        self.recovery_used = True
+        if code == "-2012":
+            self.renew()
+        else:
+            try:
+                self.validate()
+            except WeReadError as error:
+                if error.code not in {"-2012", "login_expired"}:
+                    raise
+                self.save()
+
+    def request(self, method, path, **kwargs):
+        started = time.monotonic()
+        try:
+            try:
+                result = self._request(method, path, **kwargs)
+            except WeReadError as error:
+                if (path not in {"/web/mp/articles", "/web/mp/content", "/web/book/info"}
+                        or error.code not in {"-2012", "-2041"} or self.recovery_used):
+                    raise
+                self.trace.append({"phase": path, "error_code": error.code})
+                self.recover(error.code)
+                kwargs["headers"] = {**kwargs.get("headers", {}), **self.extra_headers}
+                result = self._request(method, path, **kwargs)
+            self.trace.append({"phase": path, "ok": True,
+                               "elapsed_s": round(time.monotonic() - started, 3),
+                               "recovery_used": self.recovery_used})
+            return result
+        except WeReadError as error:
+            self.trace.append({"phase": path, "error_code": error.code,
+                               "elapsed_s": round(time.monotonic() - started, 3)})
+            raise
+
+    def _request(
         self,
         method,
         path,
@@ -241,6 +300,7 @@ class WeReadClient:
         if path not in ALLOWED.get(host, set()):
             raise WeReadError("invalid_endpoint", "此工具只请求微信读书自身的读取接口。")
         client = session or self.session
+        previous_cookies = self.session.cookies.get_dict()
         try:
             with client.request(
                 method,
@@ -280,7 +340,13 @@ class WeReadClient:
             raise WeReadError("timeout", "微信读书响应超时，请稍后重试。") from None
         except requests.RequestException:
             raise WeReadError("network", "无法连接微信读书，请检查网络。") from None
-        if raw:
+        if client is self.session:
+            self.normalize_cookies(response_cookies)
+            changed = [k for k, v in self.session.cookies.get_dict().items()
+                       if previous_cookies.get(k) != v]
+            if changed:
+                self.trace.append({"phase": path, "cookie_names_changed": changed})
+        if raw and not text.lstrip().startswith("{"):
             return text, response_headers, response_cookies
         try:
             data = json.loads(text)
@@ -297,7 +363,7 @@ class WeReadClient:
                 "-2041": "微信读书没有接受读取凭证，请在官方客户端打开该公众号后重试。",
             }.get(str(code), f"微信读书返回错误码 {code}。")
             raise WeReadError(str(code), message)
-        return data, response_headers, response_cookies
+        return (text if raw else data), response_headers, response_cookies
 
     def create_login(self):
         self.request("GET", "/r/weread-skills", raw=True, headers={"Referer": BASE + "/"})
@@ -337,6 +403,8 @@ class WeReadClient:
     def validate(self):
         if not self.logged_in:
             raise WeReadError("login_required", "请先扫码登录微信读书。")
+        self.validated = False
+        self.normalize_cookies()
         cookie = self.session.cookies.get_dict()
         data, _, _ = self.request(
             "GET",
@@ -352,26 +420,26 @@ class WeReadClient:
 
     def renew(self):
         old = copy.deepcopy(self.session.cookies)
+        old_headers = self.extra_headers.copy()
+        self.validated = False
         try:
             data, headers, cookies = self.request(
-                "POST",
-                "/web/login/renewal",
+                "POST", "/web/login/renewal",
                 payload={"rq": "%2Fweb%2Fbook%2Fread", "ql": False},
                 headers={"Origin": BASE, "Referer": BASE + "/"},
             )
             if data.get("succ") not in (True, 1, "1"):
                 raise WeReadError("renewal_failed", "登录续期失败，请重新扫码。")
+            self.normalize_cookies(cookies)
+            for name, value in headers.items():
+                if name.lower() in {"x-wr-ticket", "x-wrpa-0"} and value:
+                    self.extra_headers[name.lower()] = value
+            self.validate()
         except Exception:
             self.session.cookies = old
+            self.extra_headers = old_headers
+            self.validated = False
             raise
-        for fresh in cookies:
-            for previous in list(cast(Any, self.session.cookies)):
-                if previous.name == fresh.name:
-                    self.session.cookies.clear(previous.domain, previous.path, previous.name)
-            self.session.cookies.set_cookie(fresh)
-        for name, value in headers.items():
-            if name.lower() in {"x-wr-ticket", "x-wrpa-0"} and value:
-                self.extra_headers[name.lower()] = value
         self.save()
 
     def gateway(self, api_name, **params):
@@ -439,20 +507,12 @@ class WeReadClient:
     def catalog(self, account_id):
         if not ACCOUNT_RE.fullmatch(account_id):
             raise WeReadError("invalid_account", "公众号编号格式不正确。")
-        for attempt in range(2):
-            try:
-                data, _, _ = self.request(
-                    "GET",
-                    "/web/mp/articles",
-                    params={"bookId": account_id, "maxIdx": 0, "count": 100},
-                    headers={"Referer": BASE + "/", **self.extra_headers},
-                )
-                return parse_articles(data, account_id)
-            except WeReadError as error:
-                if attempt == 0 and error.code in {"-2012", "-2041"}:
-                    self.renew()
-                    continue
-                raise
+        data, _, _ = self.request(
+            "GET", "/web/mp/articles",
+            params={"bookId": account_id, "maxIdx": 0, "count": 100},
+            headers={"Referer": BASE + "/", **self.extra_headers},
+        )
+        return parse_articles(data, account_id)
 
     def article(self, article):
         if not REVIEW_RE.fullmatch(article["id"]):
@@ -481,7 +541,7 @@ class WeReadClient:
         return extract_article(source, article["title"])
 
     def save(self):
-        if self.auth_path and self.logged_in:
+        if self.auth_path and self.logged_in and self.validated:
             atomic_json(
                 self.auth_path,
                 {

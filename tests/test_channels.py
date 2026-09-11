@@ -1709,6 +1709,10 @@ class TestExaSearchChannel:
 
 
 class TestXiaoyuzhouChannel:
+    @pytest.fixture(autouse=True)
+    def legacy_backend(self, monkeypatch):
+        monkeypatch.setattr("agent_reach.channels.xiaoyuzhou.get_configured", lambda: False)
+
     def test_reports_error_with_reinstall_hint_when_ffmpeg_broken(self, monkeypatch):
         """ffmpeg which 命中但 exec 失败（pip 假 ffmpeg 断链）→ error + 重装处方。"""
         monkeypatch.setattr(shutil, "which", lambda _: "/usr/local/bin/ffmpeg")

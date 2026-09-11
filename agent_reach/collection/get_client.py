@@ -95,8 +95,8 @@ def save(path, record):
     tmp.replace(path)
 
 
-def main():
-    args = sys.argv[1:]
+def main(args=None):
+    args = sys.argv[1:] if args is None else args
     if len(args) < 3 or len(args) % 2 != 1:
         raise SystemExit("Usage: get_pipeline.py OUTPUT LABEL URL [LABEL URL ...]")
     root = Path(args[0])
@@ -106,8 +106,8 @@ def main():
     for label, url in zip(args[1::2], args[2::2]):
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", label):
             raise ValueError("Invalid label")
-        if not valid_douyin_url(url):
-            raise ValueError("Expected official Douyin share or video URL")
+        if not (valid_douyin_url(url) or re.fullmatch(r"https://www\.xiaoyuzhoufm\.com/episode/[a-f0-9]{24}/?", url)):
+            raise ValueError("Expected official Douyin or public Xiaoyuzhou episode URL")
         path = root / (label + ".json")
         if path.exists():
             record = json.loads(path.read_text())

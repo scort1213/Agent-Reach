@@ -7,6 +7,20 @@ from pathlib import Path
 
 
 def register(sub):
+    p = sub.add_parser("browser-ready", help="Prepare the selected OpenCLI profile on demand")
+    p.add_argument("--profile")
+    p.add_argument("--wait", type=int, default=0)
+    p.add_argument("--json", action="store_true")
+    p = sub.add_parser("collect-podcast", help="Public Xiaoyuzhou to Get originals; Agent verifies content")
+    p.add_argument("source")
+    p.add_argument("--output", required=True, type=Path)
+    p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--no-submit", action="store_true")
+    p.add_argument("--max-transcription-minutes", type=float, default=15)
+    p.add_argument("--prepare-audio", action="store_true")
+    note = p.add_mutually_exclusive_group()
+    note.add_argument("--audio-note-id")
+    note.add_argument("--audio-note-title")
     p = sub.add_parser("collection-frames", help="Append up to eight targeted frames before review")
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--video-id", required=True)
@@ -39,7 +53,11 @@ def register(sub):
 
 def run(args):
     try:
-        if args.command in {"collect-wechat", "wechat-login"}:
+        if args.command == "browser-ready":
+            from agent_reach.backends.browser_ready import prepare
+
+            state = prepare(args.profile, args.wait)
+        elif args.command in {"collect-wechat", "wechat-login"}:
             payload = (
                 {
                     "action": "login_check" if args.check else "login_start",
@@ -65,6 +83,11 @@ def run(args):
             if result.returncode:
                 raise ValueError("微信读书辅助程序不可用，请安装 collection 可选依赖")
             state = json.loads(result.stdout)
+        elif args.command == "collect-podcast":
+            from .podcast import collect as collect_podcast
+
+            state = collect_podcast(args.source, args.output, args.limit, args.no_submit,
+                            args.max_transcription_minutes, args.prepare_audio, args.audio_note_id, args.audio_note_title)
         elif args.command == "collect-douyin":
             from .jobs import collect
 
@@ -84,11 +107,14 @@ def run(args):
         elif args.command == "collection-review":
             from .jobs import finalize
 
+            job = json.loads((args.output / "job.json").read_text())
+            if job.get("platform") == "xiaoyuzhou":
+                from .podcast import review as finalize
             state = finalize(args.output, json.loads(args.review.read_text()))
         else:
             state = json.loads((args.output / "job.json").read_text())
         print(json.dumps(state, ensure_ascii=False, indent=2))
-        return 0 if state["status"] in {"complete", "awaiting_analysis", "account_resolved"} else 2
+        return 0 if state["status"] in {"complete", "awaiting_analysis", "account_resolved", "ready", "discovered"} else 2
     except (ValueError, KeyError, OSError, StopIteration) as error:
         print(
             json.dumps(

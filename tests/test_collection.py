@@ -194,7 +194,9 @@ def test_weread_resume_and_all_scope(tmp_path, monkeypatch):
         def load(self):
             return True
 
-        def validate(self):
+        trace = []
+
+        def prepare(self):
             pass
 
         def renew(self):
