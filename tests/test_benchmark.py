@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_reach.benchmark import review, run_case, run_cases, scrub, summary
+from agent_reach.benchmark import review, route_assessments, run_case, run_cases, scrub, summary
 
 
 def case(**kwargs):
@@ -130,3 +130,49 @@ def test_source_probe_limits_feed_without_claiming_fulltext(monkeypatch, capsys)
     data = json.loads(capsys.readouterr().out)
     assert len(data['items']) == 3
     assert 'body' not in data['items'][0]
+
+
+def test_summary_keeps_missing_routes_and_versions_separate(tmp_path):
+    (tmp_path / 'run.json').write_text(json.dumps({'planned_routes': [{'platform': 'test'}, {'platform': 'missing'}]}))
+    run_case(case(candidate_version='v1', backend='formal'), tmp_path, 'r1')
+    run_case(case(candidate_version='v2', backend='optional', cache='cached_replay'), tmp_path, 'r2')
+    coverage = summary(tmp_path)['planned_coverage']
+    assert len(coverage) == 2
+    assert not coverage['missing']['recorded']
+    assert coverage['test']['versions'] == ['v1', 'v2']
+    assert coverage['test']['backends'] == ['formal', 'optional']
+    assert coverage['test']['cached_replays'] == 1
+    assert coverage['test']['unreviewed'] == 2
+
+
+def test_route_requires_correct_backend_all_stages_identity_and_rounds(tmp_path):
+    planned = {'candidate_version': 'v1', 'planned_routes': [{
+        'platform': 'test', 'route_group': 'custom',
+        'formal_backends': {s: ['formal'] for s in ('discovery', 'content', 'analysis')},
+        'fallback_backends': {s: ['backup'] for s in ('discovery', 'content', 'analysis')},
+    }]}
+    rows = []
+    for rnd in ('r1', 'r2', 'r3'):
+        for stage in ('discovery', 'content', 'analysis'):
+            p = run_case(case(stage=stage, backend='formal', candidate_version='v1', source_ids=['a']), tmp_path, rnd)
+            rows.append(review(p, {'verdict': 'pass', 'reason': 'Reviewed evidence',
+                                  'quotes': ['Title: sample', 'Body: actual source evidence'],
+                                  'conclusion': 'sample', 'value': 'sample', 'limitations': 'sample'}))
+    def verdict():
+        return route_assessments(rows, planned)['routes']['test']['verdict']
+    assert verdict() == 'pass'
+    rows[-1]['backend'] = 'optional'
+    assert verdict() == 'partial'
+    rows[-1]['backend'] = 'backup'
+    assert verdict() == 'fallback_pass'
+    rows[-1]['source_ids'] = ['different-article']
+    assert verdict() == 'partial'
+    rows[-1]['source_ids'] = ['a']
+    rows[-1]['cache'] = 'cached_replay'
+    assert verdict() == 'partial'
+    rows[-1]['cache'] = 'fresh_request'
+    rows[-1]['candidate_version'] = 'v0'
+    assert verdict() == 'partial'
+    rows[-1]['candidate_version'] = 'v1'
+    Path(rows[-1]['evidence']).unlink()
+    assert verdict() == 'partial'

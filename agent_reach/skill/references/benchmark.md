@@ -1,5 +1,13 @@
 # 场景验收
 
+18条固定分为自建微信公众号/抖音/今日头条3条和原有15条。以安装包内
+`benchmark-scenarios.json`为任务定义，复制到运行目录的`run.json`之`planned_routes`。
+每条记录填写`scenario`、`route_group`、`backend`、`source_ids`和安装版本；
+正式与允许的备用入口按任务定义核对。汇总的`task_acceptance`检查三轮中
+发现、正文、分析齐全且编号对应；历史重放不能满足实时验收，备用通过不覆盖主入口失败。
+当前会话已授权的新Get转写上限为30分钟，所有平台共享；续查不重复创建任务。
+以后任务按用户当次额度，不继承本次预算作为永久付费授权。
+
 仅在用户要求评估稳定性、验收或 benchmark 时使用。
 
 `agent-reach-benchmark run cases.json --output ~/.agent-reach/benchmarks/RUN --round r1`

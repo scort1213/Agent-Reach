@@ -116,6 +116,10 @@ def _run(args, client):
     else:
         catalog = client.catalog(account["id"])
         # This source only proves a first page, not an exhausted history.
+        unique = {}
+        for article in catalog:
+            unique.setdefault(article["id"], article)
+        catalog = list(unique.values())
         selected = catalog if all_available else catalog[:limit]
         state = {
             "platform": "wechat",
@@ -128,6 +132,20 @@ def _run(args, client):
             "items": [{**a, "status": "pending"} for a in selected],
         }
         atomic_json(path, state)
+    # A saved status is not evidence that the deliverable still exists.
+    # Preserve altered files for inspection rather than overwriting user edits.
+    for article in state["items"]:
+        if article["status"] not in {"body_saved", "complete"}:
+            continue
+        body = Path(article.get("file", ""))
+        if not body.is_file() or hashlib.sha256(body.read_bytes()).hexdigest() != article.get("sha256"):
+            article.update(status="failed", error={
+                "code": "saved_body_changed_or_missing",
+                "message": "已保存正文缺失或发生变化；保留现有文件，请核对后使用新任务目录重新采集",
+            })
+        elif article["status"] == "complete" and not Path(article.get("report", "")).is_file():
+            article["status"] = "body_saved"
+            article.pop("report", None)
     stopped = any(a.get("stop") for a in state["items"])
     for article in state["items"]:
         if article["status"] != "pending":
@@ -167,6 +185,7 @@ def _run(args, client):
         atomic_json(path, state)
     state["body_saved"] = sum(a["status"] in {"body_saved", "complete"} for a in state["items"])
     completed = sum(a["status"] == "complete" for a in state["items"])
+    state["completed"] = completed
     state["status"] = (
         "awaiting_analysis"
         if state["items"] and state["body_saved"] == len(state["items"])

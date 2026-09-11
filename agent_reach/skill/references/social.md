@@ -227,7 +227,7 @@ user = ch.get_user("Livid")
 opencli reddit search "query" -f yaml
 
 # 读帖子全文 + 评论
-opencli reddit read POST_ID -f yaml
+opencli reddit read POST_ID --limit 10 --max-length 100000 -f yaml
 
 # 浏览 subreddit / 热门 / Popular
 opencli reddit subreddit LocalLLaMA -f yaml
@@ -241,6 +241,8 @@ opencli reddit subreddit-info LocalLLaMA -f yaml
 > 要求 Chrome 打开且浏览器里登录过 reddit.com。
 
 ### 后端 B：rdt-cli（存量/服务器备选，上游 2026-03 起停更）
+
+OpenCLI 默认 `--max-length 2000` 同时截断主帖与评论。正文分析需显式提高上限，并检查返回的截断标记；仍截断时标记部分读取，不把命令成功当作全文取得。评论数量仅代表本次选取范围，不宣称全部评论。
 
 ```bash
 rdt search "query" --limit 10   # 搜索帖子

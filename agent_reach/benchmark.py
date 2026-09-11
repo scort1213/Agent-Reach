@@ -57,6 +57,9 @@ def run_case(case, output, round_name):
               'task': case['task'], 'assessment': 'unreviewed', 'cache': case.get('cache', 'unknown'),
               'scenario': case.get('scenario', case['platform']),
               'expected': case.get('expected', []), 'source_urls': case.get('source_urls', [])}
+    for key in ('candidate_version', 'artifact_sha256', 'backend', 'attempt', 'recovery_count', 'source_ids', 'route_group', 'analysis_reused'):
+        if key in case:
+            result[key] = case[key]
     stdout = stderr = ''
     try:
         if case.get('blocked_reason'):
@@ -123,6 +126,77 @@ def review(result_path, assessment):
     return result
 
 
+def route_assessments(rows, planned):
+    """Certify declared task stages, never platform probe counts or replay alone."""
+    routes = {}
+    for route in planned.get('planned_routes', []):
+        platform = route['platform']
+        observed = [r for r in rows if r['platform'] == platform]
+        rounds = route.get('required_rounds', ['r1', 'r2', 'r3'])
+        tasks = route.get('required_scenarios', [platform])
+        checks = []
+        fallback_used = False
+        for task in tasks:
+            for round_name in rounds:
+                selected = {}
+                missing = []
+                for stage in ('discovery', 'content', 'analysis'):
+                    primary = route.get('formal_backends', {}).get(stage, [])
+                    backup = route.get('fallback_backends', {}).get(stage, [])
+                    candidates = [r for r in observed
+                                  if r.get('scenario') == task and r['round'] == round_name
+                                  and r['stage'] == stage and r['assessment'] == 'pass'
+                                  and r.get('cache') in ('fresh_request', 'fresh_observation', 'resume_validation')
+                                  and r.get('backend') in primary + backup
+                                  and r.get('source_ids')
+                                  and (not planned.get('candidate_version') or
+                                       r.get('candidate_version') == planned['candidate_version'])]
+                    valid = []
+                    for row in candidates:
+                        evidence = Path(row['evidence'])
+                        if evidence.is_file() and hashlib.sha256(evidence.read_bytes()).hexdigest() == row['evidence_sha256']:
+                            valid.append(row)
+                    if valid:
+                        selected[stage] = max(valid, key=lambda r: (r.get('backend') in primary, r.get('started_at', '')))
+                    else:
+                        missing.append(stage)
+                if not missing:
+                    discovered = set(selected['discovery']['source_ids'])
+                    content = set(selected['content']['source_ids'])
+                    analyzed = set(selected['analysis']['source_ids'])
+                    if not content <= discovered or analyzed != content:
+                        missing.append('source_identity_or_analysis_coverage')
+                    else:
+                        fallback_used |= any(row['backend'] not in route['formal_backends'].get(stage, [])
+                                             for stage, row in selected.items())
+                checks.append({'scenario': task, 'round': round_name, 'missing': missing})
+        complete = bool(checks) and all(not c['missing'] for c in checks)
+        if complete:
+            verdict = 'fallback_pass' if fallback_used else 'pass'
+        elif not observed:
+            verdict = 'not_tested'
+        elif any(r['assessment'] == 'pass' for r in observed):
+            verdict = 'partial'
+        elif any(r['assessment'] == 'blocked' for r in observed):
+            verdict = 'blocked'
+        elif any(r['assessment'] == 'fail' for r in observed):
+            verdict = 'fail'
+        else:
+            verdict = 'partial'
+        routes[platform] = {'group': route.get('route_group', 'unspecified'),
+                            'verdict': verdict, 'checks': checks,
+                            'observations': len(observed),
+                            'primary_failures': sum(r['assessment'] in ('fail', 'blocked') for r in observed),
+                            'replays': sum(r.get('cache') == 'cached_replay' for r in observed)}
+    groups = {}
+    for route in routes.values():
+        group = groups.setdefault(route['group'], {'total': 0, 'pass': 0, 'fallback_pass': 0,
+                                                   'partial': 0, 'blocked': 0, 'fail': 0, 'not_tested': 0})
+        group['total'] += 1
+        group[route['verdict']] += 1
+    return {'routes': routes, 'groups': groups}
+
+
 def summary(output):
     rows = [json.loads(p.read_text()) for p in Path(output).glob('*/*/result.json')]
     platforms: dict[str, Any] = {}
@@ -136,7 +210,27 @@ def summary(output):
             'assessment': row['assessment'], 'transport': row['transport'],
             'cache': row['cache'], 'evidence': row['evidence']})
         case['elapsed_s'].append(row['elapsed_s'])
-    return {'platforms': platforms, 'note': 'Manual stage verdicts are not end-to-end certification. A fresh request may still hit an upstream cache. Repeated rounds in one session do not establish long-term reliability.'}
+    coverage = {}
+    manifest = Path(output) / 'run.json'
+    planned = {}
+    if manifest.exists():
+        planned = json.loads(manifest.read_text())
+        for route in planned.get('planned_routes', []):
+            platform = route['platform']
+            observed = [r for r in rows if r['platform'] == platform]
+            # Coverage is not certification. Even many passing observations may
+            # omit a required task, use a different backend, or replay old data.
+            coverage[platform] = {
+                'recorded': bool(observed),
+                'rounds_recorded': sorted({r['round'] for r in observed}),
+                'unreviewed': sum(r['assessment'] == 'unreviewed' for r in observed),
+                'versions': sorted({r.get('candidate_version', 'unknown') for r in observed}),
+                'backends': sorted({r.get('backend', 'unknown') for r in observed}),
+                'cached_replays': sum(r.get('cache') == 'cached_replay' for r in observed),
+            }
+    return {'platforms': platforms, 'planned_coverage': coverage,
+            'task_acceptance': route_assessments(rows, planned),
+            'note': 'Manual stage verdicts are not end-to-end certification. A fresh request may still hit an upstream cache. Repeated rounds in one session do not establish long-term reliability.'}
 
 
 def run_cases(cases, output, round_name):

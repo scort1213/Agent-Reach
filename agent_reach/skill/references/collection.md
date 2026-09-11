@@ -55,7 +55,9 @@ agent-reach collection-status --output TASK
 
 ## 每次浏览器任务前准备
 
-先运行 `agent-reach browser-ready --json`。ready 才开始发现；needs_browser 时由 Agent 操作对应 Chrome 资料，打开浏览器并确认扩展启用，再执行 `agent-reach browser-ready --wait 45 --json`。needs_profile 时先核对用户账号再选择资料。不要借用另一个已登录资料；doctor 只检查，不恢复连接。
+按实际发现工具检查连接。正式 Computer Use 路线使用当前 Agent 的浏览器工具检查、选择用户已确认的 Chrome；OpenCLI 的连接状态不能代表 Computer Use 可用或不可用。
+
+只有选择 OpenCLI 适配器时才运行 `agent-reach browser-ready --json`；该命令只准备 OpenCLI 扩展连接。needs_browser 时由 Agent 打开对应 Chrome 资料并确认扩展启用，再执行 `agent-reach browser-ready --wait 45 --json`。needs_profile 时先核对用户账号再选择资料。不要借用另一个已登录资料；doctor 只检查，不恢复连接。
 
 普通断连交给 OpenCLI 同编号恢复机制；只读发现最多重试一次，先记录已发现的视频编号。Get创建结果未知不得重提。Navigation rejected、验证码或明确访问拒绝不是普通断连，停止同一受阻访问，不切换工具绕行。
 
