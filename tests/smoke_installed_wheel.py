@@ -42,7 +42,8 @@ def main():
                                 text=True, check=True, cwd=directory, timeout=20)
         assert version in result.stdout, "CLI version mismatch"
         for command in ("collect-wechat", "collect-douyin", "collect-podcast",
-                        "collection-status", "collection-review", "read-toutiao-batch"):
+                        "collection-status", "collection-review", "read-toutiao-batch",
+                        "collect-youtube", "read-x"):
             assert command in skill, f"Skill missing {command}"
             subprocess.run([str(executable), command, "--help"], check=True,
                            stdout=subprocess.DEVNULL, cwd=directory, timeout=20)

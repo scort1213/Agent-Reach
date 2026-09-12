@@ -97,3 +97,12 @@ def test_all_urls_validated_before_fetch(monkeypatch, tmp_path):
     monkeypatch.setattr(batch, "read_article", lambda url: pytest.fail("unexpected fetch"))
     with pytest.raises(ValueError):
         batch.read_batch(data, tmp_path)
+
+
+def test_observed_zlink_wrapper_decodes_without_network():
+    wrapped = 'https://article.zlink.toutiao.com/J4dQM?h5_url=' + quote('https://toutiao.com/group/7684501878540878375/?source=news', safe='')
+    link = 'https://so.toutiao.com/search/jump?url=' + quote(wrapped, safe='')
+    assert batch.listing_url(link) == 'https://www.toutiao.com/article/7684501878540878375/'
+    malicious = 'https://article.zlink.toutiao.com/J4dQM?h5_url=' + quote('https://example.com/group/7684501878540878375/', safe='')
+    with pytest.raises(ValueError):
+        batch.listing_url(malicious)

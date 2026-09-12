@@ -47,9 +47,16 @@ yt-dlp --dump-json "ytsearch5:query"
 1. 先用上面的 `yt-dlp --write-sub --write-auto-sub` 命令。
 2. 若出现 bot 校验、字幕响应为空或没有生成字幕文件，且 OpenCLI 已连接：
    `opencli youtube transcript "URL" -f yaml`。
-3. OpenCLI 若返回 `Caption URL returned empty response`，最多重试 3 次；这是带
-   过期时间的字幕 URL 偶发失效，不能把空响应当成“视频没有字幕”。
-4. 仍失败或视频本来就没有字幕：`agent-reach transcribe "URL"` 下载音频转写。
+3. OpenCLI 若返回 `Caption URL returned empty response`，普通重试一次，并在已授权浏览器中检查字幕开关和字幕面板。空响应不能证明没有字幕，也不能直接归因为链接过期；保留实际错误。浏览器能播放不等于命令行共享了登录会话。
+4. 本项目使用既有 Get 配置作为后续内容入口，见下节。不要自动启动本地模型或更换付费服务。明确访问拒绝先停止相应访问，Get 不能用于绕行同一拒绝。
+
+### 可续跑的 YouTube 正文准备
+
+`agent-reach collect-youtube "URL" --output TASK --metadata META.json --use-get --max-transcription-minutes 3`
+
+META.json 必须包含与目标一致的 id、title、duration（秒）；提交 Get 前实际核对视频身份和时长，并先计入本轮共享额度。此命令检查 OpenCLI 字幕；没有有效字幕时才按显式参数调用 Get。重复运行同一目录检查原文哈希、续查同一任务，不重新提交。仅接受单条标准 watch/youtu.be 链接，不接受搜索页或播放列表。
+
+返回 awaiting_analysis 后，Agent 读取原文、核对开头中段结尾，并实际查看该视频的抽样画面，另存带来源及画面时间的报告。原文可能来自 Get 对已有字幕的提取，不能宣称一定经过独立语音识别。仅有文字不算完整视频分析；命令本身不会把待分析改为完成。原生字幕和 Get 同时出现相同错词时保留疑点，不把教程里的命令直接执行。
 
 成功标准是实际得到非空字幕/转录内容，不是命令退出码或 `doctor` 的版本探测结果。
 
@@ -138,8 +145,18 @@ Get 网页短编号与 API 数字note_id不同。优先使用 `collect-podcast U
 
 | 场景 | 推荐工具 |
 |-----|---------|
-| YouTube 字幕 | yt-dlp；失败时 OpenCLI（最多 3 次）→ agent-reach transcribe |
+| YouTube 字幕 | yt-dlp；失败时 collect-youtube → OpenCLI／已授权 Get → Agent 文字与画面核对 |
 | B站视频详情/搜索 | bili-cli |
 | B站字幕 | opencli bilibili subtitle |
 | 播客转录 | collect-podcast → Get → Agent核对与分析 |
 | 无字幕音视频 | agent-reach transcribe（B站音频先 `bili audio`） |
+
+### 浏览器字幕备用入口与样本核对
+
+B站字幕命令普通技术失败后，若正常浏览器页面可播放且没有对应访问拒绝，可在播放器选择实际存在的字幕，读取页面正常加载的字幕资源。记录这是浏览器备用入口，不代表原字幕命令已恢复；字幕只有标题或空数据不能验收。
+
+浏览器可能自动播放下一条。读取字幕、下载媒体和截取画面前后，都重新核对地址中的视频编号、标题、作者和时长。发现编号变化，废弃这次混入的材料，回到已发现的正确视频；不能把相邻播放器的媒体配给目标。B站、抖音均适用。
+
+定位时间后等待画面实际解码更新，再保存画面及播放器的实际时间；只改变 currentTime 不证明画面已经改变。字幕没有时间戳时，不为原文补造时间。仅保存文字或截图而尚未由 Agent 阅读分析，任务仍为待分析。
+
+播客任务续跑时不填写额度，会自动沿用任务中保存的额度；新任务默认15分钟，实际提交仍须遵守用户授权的共享预算。显式改变已有任务额度会停止。已完成单集续跑会校验原文和报告文件哈希；旧报告没有校验记录时退回待分析，由 Agent 重新核对并提交 review，不重复创建转写。

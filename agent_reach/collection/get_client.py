@@ -122,8 +122,10 @@ def _main_locked(args, root):
     for label, url in zip(args[1::2], args[2::2]):
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", label):
             raise ValueError("Invalid label")
-        if not (valid_douyin_url(url) or re.fullmatch(r"https://www\.xiaoyuzhoufm\.com/episode/[a-f0-9]{24}/?", url)):
-            raise ValueError("Expected official Douyin or public Xiaoyuzhou episode URL")
+        if not (valid_douyin_url(url)
+                or re.fullmatch(r"https://www\.xiaoyuzhoufm\.com/episode/[a-f0-9]{24}/?", url)
+                or re.fullmatch(r"https://www\.youtube\.com/watch\?v=[A-Za-z0-9_-]{11}", url)):
+            raise ValueError("Expected official Douyin, YouTube or public Xiaoyuzhou episode URL")
         path = root / (label + ".json")
         if path.exists():
             record = json.loads(path.read_text(encoding="utf-8"))

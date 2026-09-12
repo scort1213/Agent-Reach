@@ -243,7 +243,7 @@ def main():
         sys.exit(0)
 
     if args.command in {
-        "browser-ready", "collect-podcast", "collect-wechat", "collect-douyin", "collection-review",
+        "collect-youtube", "read-x", "browser-ready", "collect-podcast", "collect-wechat", "collect-douyin", "collection-review",
         "collection-frames", "collection-status", "wechat-login",
     }:
         from agent_reach.collection.cli import run as run_collection

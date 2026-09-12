@@ -74,9 +74,9 @@ def discover(url, limit):
     return items[:limit], isinstance(total, int) and len(items) == total, total
 
 
-def collect(source, output, limit=20, no_submit=False, max_minutes=15,
+def collect(source, output, limit=20, no_submit=False, max_minutes=None,
             prepare_audio=False, audio_note_id=None, audio_note_title=None):
-    if limit < 1 or not math.isfinite(max_minutes) or max_minutes <= 0:
+    if limit < 1 or (max_minutes is not None and (not math.isfinite(max_minutes) or max_minutes <= 0)):
         raise ValueError('数量和额度须为有效正数')
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -84,6 +84,9 @@ def collect(source, output, limit=20, no_submit=False, max_minutes=15,
         existing = output / 'job.json'
         if existing.exists() and json.loads(existing.read_text(encoding="utf-8")).get('identity') != [source, limit]:
             raise ValueError('输出目录属于另一任务')
+        if max_minutes is None:
+            max_minutes = (json.loads(existing.read_text(encoding="utf-8"))['budget_seconds'] / 60
+                           if existing.exists() else 15)
         try:
             if audio_note_title:
                 data, _ = get_client.Client().request('/resource/note/list?cursor=0')
@@ -126,6 +129,14 @@ def _collect(source, output, limit, no_submit, max_minutes, prepare_audio, audio
     if (prepare_audio or audio_note_id) and len(state['items']) != 1:
         raise ValueError('音频导入只接受单集任务')
     for item in state['items']:
+        if item['status'] == 'complete':
+            saved_original = Path(item.get('original_file', ''))
+            report = Path(item.get('report', ''))
+            if not saved_original.is_file() or hashlib.sha256(saved_original.read_bytes()).hexdigest() != item.get('original_sha256'):
+                item.update(status='needs_review', reason='saved_original_changed_or_missing')
+            elif not report.is_file() or hashlib.sha256(report.read_bytes()).hexdigest() != item.get('report_sha256'):
+                item.update(status='awaiting_analysis', reason='saved_report_unverified_changed_or_missing')
+            continue
         if item['status'] in {'complete', 'access_unavailable'}:
             continue
         if no_submit and not prepare_audio and not audio_note_id:
@@ -232,6 +243,7 @@ def review(output, data):
     target.write_text('# ' + item['title'] + '\n\n来源：' + item['url'] + '\n\n' +
                       '\n\n'.join(f'## {k}\n\n{data[k]}' for k in required), encoding="utf-8", newline="\n")
     item.update(status='complete', report=str(target),
+                report_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
                 review_method=data.get('review_method', 'agent_content_review'))
     state['status'] = 'complete' if state.get('selection_fulfilled') and all(i['status'] == 'complete' for i in state['items']) else 'partial'
     get_client.save(path, state)

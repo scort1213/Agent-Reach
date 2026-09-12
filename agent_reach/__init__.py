@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Agent Reach — Give your AI Agent eyes to see the entire internet."""
 
-__version__ = "1.5.0+collection.7"
+__version__ = "1.5.0+collection.8"
 __author__ = "Neo Reid"
 
 from agent_reach.core import AgentReach
