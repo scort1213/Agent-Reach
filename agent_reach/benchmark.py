@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+import yaml
+
 from agent_reach.utils.process import utf8_subprocess_env
 
 FAILURE_KINDS = {
@@ -69,26 +71,33 @@ def write(path, data):
 
 
 def _explicit_denial(stdout, stderr):
-    """Recognize a tool error, not a page or report merely mentioning that error."""
+    """Require an explicit denial signal, never infer one from a navigation error.
+
+    The agent can also supply failure_kind=access_denied for an observed refusal.
+    A generic Chrome/API rejection has no evidence of a permission decision.
+    """
+    codes = {'ACCESS_DENIED', 'POLICY_DENIED', 'PERMISSION_DENIED', 'USER_DENIED'}
+    explicit_message = re.compile(
+        r'^\s*(?:Error:\s*)?(?:Access denied by (?:security |access )?policy\b'
+        r'|User (?:denied|rejected) (?:permission|access)\b)', re.I | re.M)
     for text in (stdout, stderr):
-        if re.search(r'^\s*(?:Error:\s*)?Navigation rejected(?:[\s:.!]|$)', text, re.MULTILINE):
-            return True
-        # OpenCLI emits structured YAML errors by default, including with -f json.
-        error_block = re.search(r'(?m)^[ \t]*error:[ \t]*\n((?:[ \t]+[^\n]*(?:\n|$))+)', text)
-        if (re.search(r'(?m)^[ \t]*ok:[ \t]*false[ \t]*$', text) and error_block
-                and 'code: COMMAND_EXEC' in error_block.group(1)
-                and 'Navigation rejected' in error_block.group(1)):
+        if explicit_message.search(text):
             return True
         try:
-            data = json.loads(text)
-        except (ValueError, TypeError):
+            # OpenCLI emits YAML errors even when -f json is requested.
+            data = yaml.safe_load(text)
+        except (yaml.YAMLError, ValueError, TypeError):
             continue
         if isinstance(data, dict):
             error = data.get('error')
-            if error and 'Navigation rejected' in str(error):
+            if isinstance(error, dict) and str(error.get('code', '')).upper() in codes:
                 return True
-            if data.get('isError') and 'Navigation rejected' in str(data.get('content', '')):
+            if isinstance(error, str) and explicit_message.search(error):
                 return True
+            if data.get('isError') is True:
+                for item in data.get('content', []) if isinstance(data.get('content'), list) else []:
+                    if isinstance(item, dict) and explicit_message.search(str(item.get('text', ''))):
+                        return True
     return False
 
 
@@ -253,7 +262,7 @@ def _entry_key(row):
 
 
 def _latest_attempts(rows):
-    latest = {}
+    latest: dict[tuple, dict[str, Any]] = {}
     for row in rows:
         key = _entry_key(row)
         def ordering(item):
@@ -462,7 +471,7 @@ def route_assessments(rows, planned):
                                          for r in observed if r['assessment'] in ('fail', 'blocked') or r.get('failure_kind')],
                             'empty_results': sum(r['assessment'] == 'empty_valid' for r in observed),
                             'replays': sum(r.get('cache') == 'cached_replay' for r in observed)}
-    groups = {}
+    groups: dict[str, dict[str, int]] = {}
     for route in routes.values():
         group = groups.setdefault(route['group'], {'total': 0, 'pass': 0, 'fallback_pass': 0,
                                                    'partial': 0, 'blocked': 0, 'fail': 0, 'not_tested': 0})

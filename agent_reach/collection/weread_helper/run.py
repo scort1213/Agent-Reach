@@ -5,6 +5,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from file_lock import exclusive_lock
 from weread_client import ACCOUNT_RE, WeReadClient, WeReadError, atomic_json
@@ -116,7 +117,7 @@ def _run(args, client):
     else:
         catalog = client.catalog(account["id"])
         # This source only proves a first page, not an exhausted history.
-        unique = {}
+        unique: dict[str, Any] = {}
         for article in catalog:
             unique.setdefault(article["id"], article)
         catalog = list(unique.values())

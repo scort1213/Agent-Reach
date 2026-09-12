@@ -33,7 +33,7 @@ agent-reach-benchmark summary --output ~/.agent-reach/benchmarks/new-run
 
 审阅文件：`verdict`、`reason`、`quotes`；分析阶段额外包含 `conclusion`、`value`、`limitations`。允许结论是“此来源不足以支持判断”。
 
-结果默认 `unreviewed`。每次运行独立保存，超时终止子进程组；同一批次收到明确导航拒绝后停止对应平台。跨批次拒绝由Agent继续遵守，不能通过另起批次重试绕行。
+结果默认 `unreviewed`。每次运行独立保存，超时终止子进程组；同一批次收到明确权限/策略拒绝后停止对应访问。跨批次拒绝由Agent继续遵守，不能通过另起批次重试绕行。
 
 密钥仅留在现有凭证/环境配置，不进命令参数。脱敏是第二道保护，不保证识别所有秘密；原始证据始终留本地，上传只含代码、协议和汇总。基准执行器不自动安装依赖、不提交转写、不发布报告、不自动替平台修复失败。
 
@@ -44,3 +44,5 @@ agent-reach-benchmark summary --output ~/.agent-reach/benchmarks/new-run
 `task_acceptance`按 `route_group`、正式/备用入口、安装版本和来源编号检查每个场景的三轮证据。历史重放不能满足实时验收；备用成功保留主入口失败记录。导入汇总记录与底层请求分别存放，不能把记录数量当请求成功次数。
 
 `example-cases.json` 提供真实调用格式及冻结样本，运行前按本次任务选择子集并替换正文ID。不能把固定旧样本的复读当成新关键词端到端发现。头条清单由界面生成后交给 `agent-reach-benchmark-source toutiao MANIFEST.json`；抖音须经授权的发现与Get任务流程，本执行器不盲目生成新付费任务。
+
+普通 Navigation rejected 归类原因未知的导航失败，不再由该文本自动推断权限拒绝。明确的结构化权限错误及人工核对的 access_denied 仍阻断对应访问。browser-ready 在 pending 或结果未知时分别返回 busy / needs_result_check，不重启或重发既有命令。

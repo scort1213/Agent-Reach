@@ -7,6 +7,7 @@ import json
 import math
 import re
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import requests
@@ -94,7 +95,7 @@ def collect(source, output, limit=20, no_submit=False, max_minutes=15,
             return _collect(source, output, limit, no_submit, max_minutes, prepare_audio, audio_note_id)
         except (ValueError, RuntimeError, requests.RequestException, OSError) as error:
             path = output / 'job.json'
-            state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {'platform': 'xiaoyuzhou'}
+            state: dict[str, Any] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {'platform': 'xiaoyuzhou'}
             state.setdefault('failures', []).append({'type': type(error).__name__})
             state.update(status='blocked', error={'type': type(error).__name__,
                          'message': str(error) if isinstance(error, (ValueError, RuntimeError))

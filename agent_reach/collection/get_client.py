@@ -17,9 +17,13 @@ import urllib.request
 from pathlib import Path
 
 if __package__:
-    from .weread_helper.file_lock import exclusive_lock
+    from .weread_helper import file_lock
 else:  # Preserve direct script execution as well as python -m.
-    from weread_helper.file_lock import exclusive_lock
+    from weread_helper import file_lock as standalone_file_lock
+
+    file_lock = standalone_file_lock
+
+exclusive_lock = file_lock.exclusive_lock
 
 BASE = "https://openapi.biji.com/open/api/v1"
 CONFIG = Path.home() / "Library/Application Support/AgentReachGetNote/credentials.json"

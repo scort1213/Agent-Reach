@@ -57,7 +57,7 @@ def test_blocked_case_does_not_execute(tmp_path):
 
 
 def test_explicit_denial_stops_same_platform_only(tmp_path):
-    cases = [case(argv=[sys.executable, '-c', 'print("Navigation rejected");exit(1)']),
+    cases = [case(argv=[sys.executable, '-c', 'print("Error: Access denied by security policy");exit(1)']),
              case(id='dependent'), case(id='independent', platform='other')]
     results = [json.loads(p.read_text()) for p in run_cases(cases, tmp_path, 'r1')]
     assert [r['transport'] for r in results] == ['command_failed', 'not_attempted', 'returned']
@@ -493,7 +493,7 @@ def test_structured_target_denial_stops_same_target_across_entries(tmp_path):
 
 
 def test_review_cannot_reclassify_explicit_denial_as_initialization(tmp_path):
-    p = run_case(case(argv=[sys.executable, '-c', 'print("Navigation rejected")']), tmp_path, 'r1')
+    p = run_case(case(argv=[sys.executable, '-c', 'print("Error: Access denied by security policy")']), tmp_path, 'r1')
     with pytest.raises(ValueError, match='cannot be reclassified'):
         review(p, {'verdict': 'blocked', 'reason': 'incorrect category', 'failure_kind': 'initialization'})
 
@@ -602,7 +602,7 @@ def test_report_mentioning_past_denial_is_not_a_new_tool_denial(tmp_path):
 
 def test_structured_tool_error_is_an_explicit_denial(tmp_path):
     source = tmp_path / 'tool-error.json'
-    source.write_text(json.dumps({'isError': True, 'content': [{'text': 'Error: Navigation rejected for this target'}]}))
+    source.write_text(json.dumps({'isError': True, 'content': [{'text': 'Error: Access denied by security policy for this target'}]}))
     p = run_case(case(evidence_file=str(source)), tmp_path, 'r1')
     assert json.loads(p.read_text())['failure_kind'] == 'access_denied'
 
@@ -640,13 +640,13 @@ def test_primary_connection_failure_is_counted_with_successful_fallback(tmp_path
     assert result['failures'][0]['stage'] == 'connection'
 
 
-def test_opencli_yaml_denial_is_structured_and_blocks_dependent_commands(tmp_path):
+def test_opencli_yaml_navigation_error_does_not_block_platform(tmp_path):
     error = "ok: false\nerror:\n  code: COMMAND_EXEC\n  message: 'Pre-navigation to https://example.test failed: Navigation rejected.'\n  exitCode: 1\n  cause: Navigation rejected.\n"
     rows = [json.loads(p.read_text()) for p in run_cases([
         case(argv=[sys.executable, '-c', 'import sys;sys.stderr.write(' + repr(error) + ');sys.exit(1)']),
         case(id='dependent', actual_entry='cua_native')], tmp_path, 'r1')]
-    assert rows[0]['failure_kind'] == 'access_denied'
-    assert rows[1]['transport'] == 'not_attempted'
+    assert rows[0]['failure_kind'] == 'unknown'
+    assert rows[1]['transport'] == 'returned'
 
 
 def test_attempt_ordering_compares_instants_across_timezones(tmp_path):
@@ -687,3 +687,27 @@ def test_denied_host_with_only_opaque_source_id_remains_blocked(tmp_path):
     list(run_cases([case(failure_kind='access_denied', failure_scope='douyin.com')], tmp_path, 'r1'))
     row = json.loads(list(run_cases([case(id='next', source_ids=['123'])], tmp_path, 'r2'))[0].read_text())
     assert row['transport'] == 'not_attempted'
+
+
+@pytest.mark.parametrize('error', [
+    'Navigation rejected',
+    '{"error":{"code":"COMMAND_EXEC","message":"Navigation rejected"}}',
+    '{"isError":true,"content":[{"text":"Error: Navigation rejected for this target"}]}',
+])
+def test_generic_navigation_error_preserves_retry_and_independent_entries(tmp_path, error):
+    initial = list(run_cases([case(argv=[sys.executable, '-c', 'print(' + repr(error) + ');exit(1)'])], tmp_path, 'r1'))
+    failure = json.loads(initial[0].read_text())
+    assert failure['failure_kind'] == 'unknown'
+    later = list(run_cases([case(id='retry', actual_entry='opencli')], tmp_path, 'r2'))
+    assert json.loads(later[0].read_text())['transport'] == 'returned'
+
+
+@pytest.mark.parametrize('code', ['ACCESS_DENIED', 'POLICY_DENIED', 'PERMISSION_DENIED', 'USER_DENIED'])
+def test_explicit_structured_permission_error_remains_blocking(tmp_path, code):
+    error = json.dumps({'ok': False, 'error': {'code': code, 'message': 'Blocked target'}})
+    rows = list(run_cases([
+        case(argv=[sys.executable, '-c', 'print(' + repr(error) + ');exit(1)']),
+        case(id='same-target', actual_entry='cua_native'),
+    ], tmp_path, 'r1'))
+    assert json.loads(rows[0].read_text())['failure_kind'] == 'access_denied'
+    assert json.loads(rows[1].read_text())['transport'] == 'not_attempted'

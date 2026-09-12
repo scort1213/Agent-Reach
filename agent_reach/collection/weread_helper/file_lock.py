@@ -7,13 +7,14 @@ a process exits unexpectedly.
 """
 
 import errno
+import importlib
 import os
 import time
 from contextlib import contextmanager
 
 
 def _windows_acquire(handle):
-    import msvcrt
+    msvcrt = importlib.import_module("msvcrt")
 
     # LK_LOCK gives up after ten seconds. Collection/transcription can take
     # longer, so retain flock's blocking behavior with nonblocking attempts.
@@ -33,7 +34,7 @@ def exclusive_lock(path):
     """Hold the same one-byte/whole-file exclusive lock until the body exits."""
     with open(path, "a+b") as handle:
         if os.name == "nt":
-            import msvcrt
+            msvcrt = importlib.import_module("msvcrt")
 
             _windows_acquire(handle)
             try:
