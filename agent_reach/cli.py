@@ -243,7 +243,7 @@ def main():
         sys.exit(0)
 
     if args.command in {
-        "browser-ready", "collect-podcast", "collect-wechat", "collect-douyin", "collection-review",
+        "collect-youtube", "read-x", "browser-ready", "collect-podcast", "collect-wechat", "collect-douyin", "collection-review",
         "collection-frames", "collection-status", "wechat-login",
     }:
         from agent_reach.collection.cli import run as run_collection
@@ -594,7 +594,7 @@ def _install_skill(force: bool = True):
 
             for ref_file in refs_pkg.iterdir():
                 name = ref_file.name if hasattr(ref_file, 'name') else str(ref_file).split('/')[-1]
-                if name.endswith(".md"):
+                if ref_file.is_file() and name.endswith((".md", ".json")):
                     content = ref_file.read_text(encoding="utf-8") if hasattr(ref_file, 'read_text') else ref_file.read_text()
                     with open(os.path.join(refs_target, name), "w", encoding="utf-8") as f:
                         f.write(content)

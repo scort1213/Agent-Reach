@@ -1,12 +1,13 @@
 """Standalone AGPL-3.0 helper; JSON input/output over a subprocess boundary."""
 
-import fcntl
 import hashlib
 import json
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
+from file_lock import exclusive_lock
 from weread_client import ACCOUNT_RE, WeReadClient, WeReadError, atomic_json
 
 HOME = Path.home() / "Library/Application Support/WeReadArticleTool"
@@ -39,7 +40,7 @@ def login(client, home, args):
         }
     if not pending.exists():
         return {"status": "login_required", "message": "请先运行 wechat-login 生成二维码"}
-    data = json.loads(pending.read_text())
+    data = json.loads(pending.read_text(encoding="utf-8"))
     if time.time() - data["created_at"] > 300:
         return {"status": "login_expired", "message": "二维码已过期，请重新运行 wechat-login"}
     for c in data["cookies"]:
@@ -70,7 +71,7 @@ def _run(args, client):
         }
     client.prepare()
     cache_path = home / "accounts.json"
-    cached = json.loads(cache_path.read_text()) if cache_path.exists() else []
+    cached = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else []
     query = args["account"]
     if ACCOUNT_RE.fullmatch(query):
         account = client.account_info(query)
@@ -110,12 +111,16 @@ def _run(args, client):
         raise ValueError("数量须为正整数")
     identity = [account["id"], "all" if all_available else limit]
     if path.exists():
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         if state["identity"] != identity:
             raise ValueError("输出目录属于其他任务")
     else:
         catalog = client.catalog(account["id"])
         # This source only proves a first page, not an exhausted history.
+        unique: dict[str, Any] = {}
+        for article in catalog:
+            unique.setdefault(article["id"], article)
+        catalog = list(unique.values())
         selected = catalog if all_available else catalog[:limit]
         state = {
             "platform": "wechat",
@@ -128,6 +133,20 @@ def _run(args, client):
             "items": [{**a, "status": "pending"} for a in selected],
         }
         atomic_json(path, state)
+    # A saved status is not evidence that the deliverable still exists.
+    # Preserve altered files for inspection rather than overwriting user edits.
+    for article in state["items"]:
+        if article["status"] not in {"body_saved", "complete"}:
+            continue
+        body = Path(article.get("file", ""))
+        if not body.is_file() or hashlib.sha256(body.read_bytes()).hexdigest() != article.get("sha256"):
+            article.update(status="failed", error={
+                "code": "saved_body_changed_or_missing",
+                "message": "已保存正文缺失或发生变化；保留现有文件，请核对后使用新任务目录重新采集",
+            })
+        elif article["status"] == "complete" and not Path(article.get("report", "")).is_file():
+            article["status"] = "body_saved"
+            article.pop("report", None)
     stopped = any(a.get("stop") for a in state["items"])
     for article in state["items"]:
         if article["status"] != "pending":
@@ -140,7 +159,8 @@ def _run(args, client):
                 text = body["text"]
                 dest = output / (article["id"] + ".md")
                 dest.write_text(
-                    f"# {article['title']}\n\n公众号：{account['name']}\n发布时间：{article.get('published')}\n\n{text}\n"
+                    f"# {article['title']}\n\n公众号：{account['name']}\n发布时间：{article.get('published')}\n\n{text}\n",
+                    encoding="utf-8", newline="\n",
                 )
                 article.update(
                     status="body_saved",
@@ -167,6 +187,7 @@ def _run(args, client):
         atomic_json(path, state)
     state["body_saved"] = sum(a["status"] in {"body_saved", "complete"} for a in state["items"])
     completed = sum(a["status"] == "complete" for a in state["items"])
+    state["completed"] = completed
     state["status"] = (
         "awaiting_analysis"
         if state["items"] and state["body_saved"] == len(state["items"])
@@ -183,8 +204,7 @@ def _run(args, client):
 def run(args):
     home = Path(args.get("home", HOME))
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with (home / "session.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with exclusive_lock(home / "session.lock"):
         client = WeReadClient(home / "login.json")
         try:
             return _run(args, client)
@@ -205,4 +225,5 @@ if __name__ == "__main__":
                 "message": "读取失败；检查登录、数据格式或依赖",
             },
         }
-    print(json.dumps(result, ensure_ascii=False))
+    # ASCII JSON keeps the subprocess protocol independent of console codepage.
+    print(json.dumps(result, ensure_ascii=True))

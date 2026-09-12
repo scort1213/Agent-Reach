@@ -214,7 +214,11 @@ def test_video_reference_has_content_level_youtube_fallbacks():
         ROOT / "agent_reach" / "skill" / "references" / "video.md"
     ).read_text(encoding="utf-8")
     assert "opencli youtube transcript" in text
-    assert "最多重试 3 次" in text
+    assert "普通重试一次" in text
+    assert "collect-youtube" in text
+    assert "--use-get" in text
+    assert "awaiting_analysis" in text
+    assert "Get 不能用于绕行同一拒绝" in text
     assert "agent-reach transcribe" in text
 
 

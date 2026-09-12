@@ -27,10 +27,19 @@ def listing_url(url: str) -> str:
                 break
             url = values[0]
             continue
+        if p.hostname == "article.zlink.toutiao.com":
+            values = parse_qs(p.query).get("h5_url", [])
+            if len(values) != 1:
+                break
+            url = values[0]
+            continue
         if p.hostname in {"www.toutiao.com", "toutiao.com", "m.toutiao.com"}:
             match = re.fullmatch(r"/a(\d{10,25})/?", p.path)
+            group = re.fullmatch(r"/group/(\d{10,25})/?", p.path)
             if match:
                 url = f"https://www.toutiao.com/article/{match[1]}/"
+            elif group:
+                url = f"https://www.toutiao.com/article/{group[1]}/"
             return normalize_article_url(url)
         break
     raise ValueError("列表中存在不支持的文章链接")

@@ -2,6 +2,8 @@
 
 小红书、Twitter/X、B站、V2EX、Reddit、Facebook、Instagram。
 
+用户接受桌面操作完成任务时，可将已授权的原生 Computer Use 作为显式备用入口：从真实界面搜索或定位，读取原始帖子及需要的配图，记录实际入口和原工具失败。页面适配错误不等于登录失效；已有明确目标/宿主拒绝未正常恢复时不切换入口。无法分类的错误先归因，不自动进入下面的换入口重试链。桌面能力需由宿主提供，CLI自身不具备这项能力。
+
 ## 小红书 / XiaoHongShu（多后端）
 
 小红书有三个后端，**先跑 `agent-reach doctor --json` 看 xiaohongshu 的 `active_backend` 是哪个**，再用对应命令组。
@@ -24,6 +26,8 @@ opencli xiaohongshu feed -f yaml
 # 用户主页公开笔记
 opencli xiaohongshu user USER_ID -f yaml
 ```
+
+搜索控件出现 `ambiguous_option` 时，记录筛选项及错误；可用允许的原生桌面入口输入关键词，核对后提交，再实际选择“最新”等筛选。将原帖页面观察到的完整链接交给 `note` 命令取正文；配图须打开原帖实际查看。桌面文字树可能截断长文，须核对正文末段。搜索排名或分类变化单独记录，不把搜索页的 AI 总结当作原帖正文。适配器修正先在隔离副本验证，不覆盖用户已安装版本。
 
 > 要求 Chrome 打开且装了 OpenCLI 扩展。OpenCLI 只使用用户已经存在且明确控制
 > 的 Chrome 会话；Agent Reach 不替用户登录，也不读取浏览器 Cookie。
@@ -227,7 +231,7 @@ user = ch.get_user("Livid")
 opencli reddit search "query" -f yaml
 
 # 读帖子全文 + 评论
-opencli reddit read POST_ID -f yaml
+opencli reddit read POST_ID --limit 10 --max-length 100000 -f yaml
 
 # 浏览 subreddit / 热门 / Popular
 opencli reddit subreddit LocalLLaMA -f yaml
@@ -241,6 +245,8 @@ opencli reddit subreddit-info LocalLLaMA -f yaml
 > 要求 Chrome 打开且浏览器里登录过 reddit.com。
 
 ### 后端 B：rdt-cli（存量/服务器备选，上游 2026-03 起停更）
+
+OpenCLI 默认 `--max-length 2000` 同时截断主帖与评论。正文分析需显式提高上限，并检查返回的截断标记；仍截断时标记部分读取，不把命令成功当作全文取得。评论数量仅代表本次选取范围，不宣称全部评论。
 
 ```bash
 rdt search "query" --limit 10   # 搜索帖子
@@ -299,3 +305,10 @@ opencli instagram saved --limit 20 -f yaml
 ```
 
 > 要求 Chrome 打开且装了 OpenCLI 扩展，并已登录 instagram.com。`instagram search` 是用户搜索；读帖子需要先确定 username，再用 `instagram user USERNAME`。若出现 429 / login required，先让用户在 Chrome 里重新登录并降低频率。
+
+## X 长文章与可续跑读取
+
+搜索取得 status 编号后执行 `agent-reach read-x "帖子编号或status链接" --output TASK`。
+若目标帖只有短链接，入口继续用 OpenCLI article 读取对应长文章，并核对所属帖子编号；普通短帖保持原样，不凭长度补造内容。reply_count 只统计明确回复目标帖的去重记录；父帖及其他线程记录计入 context_count，不代表全部回复。父帖可以超出搜索日期范围，只作背景，不算新的近期结果。
+
+`agent-reach read-x "同一编号" --output TASK --resume` 只核对已保存正文和线程文件的哈希，不是一次新的实时抓取。去掉 --resume 才重新请求；新请求失败会覆盖任务状态，旧成功不能掩盖当前失败。Agent 实际读 body.md 与 thread.json 后另写分析，区分作者自述、证据和疑点；awaiting_analysis 不能标为分析完成。

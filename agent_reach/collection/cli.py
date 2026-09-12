@@ -7,6 +7,16 @@ from pathlib import Path
 
 
 def register(sub):
+    p = sub.add_parser("collect-youtube", help="Prepare YouTube captions or authorized Get fallback")
+    p.add_argument("source")
+    p.add_argument("--output", required=True, type=Path)
+    p.add_argument("--metadata", type=Path)
+    p.add_argument("--use-get", action="store_true")
+    p.add_argument("--max-transcription-minutes", type=float, default=3)
+    p = sub.add_parser("read-x", help="Read a post and replies; resolve link-only X Articles")
+    p.add_argument("source")
+    p.add_argument("--output", required=True, type=Path)
+    p.add_argument("--resume", action="store_true")
     p = sub.add_parser("browser-ready", help="Prepare the selected OpenCLI profile on demand")
     p.add_argument("--profile")
     p.add_argument("--wait", type=int, default=0)
@@ -16,7 +26,8 @@ def register(sub):
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--no-submit", action="store_true")
-    p.add_argument("--max-transcription-minutes", type=float, default=15)
+    p.add_argument("--max-transcription-minutes", type=float, default=None,
+                   help="New task: 15 minutes; resume: preserve the saved budget")
     p.add_argument("--prepare-audio", action="store_true")
     note = p.add_mutually_exclusive_group()
     note.add_argument("--audio-note-id")
@@ -53,7 +64,16 @@ def register(sub):
 
 def run(args):
     try:
-        if args.command == "browser-ready":
+        if args.command == "collect-youtube":
+            from .youtube import collect as collect_youtube
+
+            state = collect_youtube(args.source, args.output, args.metadata,
+                                    args.use_get, args.max_transcription_minutes)
+        elif args.command == "read-x":
+            from .twitter import collect as collect_x
+
+            state = collect_x(args.source, args.output, args.resume)
+        elif args.command == "browser-ready":
             from agent_reach.backends.browser_ready import prepare
 
             state = prepare(args.profile, args.wait)
@@ -61,7 +81,7 @@ def run(args):
             payload = (
                 {
                     "action": "login_check" if args.check else "login_start",
-                    "otp": args.otp_file.read_text().strip() if args.otp_file else "",
+                    "otp": args.otp_file.read_text(encoding="utf-8").strip() if args.otp_file else "",
                 }
                 if args.command == "wechat-login"
                 else {
@@ -78,6 +98,7 @@ def run(args):
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 check=False,
             )
             if result.returncode:
@@ -92,7 +113,7 @@ def run(args):
             from .jobs import collect
 
             state = collect(
-                json.loads(Path(args.source).read_text()),
+                json.loads(Path(args.source).read_text(encoding="utf-8")),
                 args.output,
                 limit=args.limit,
                 all_available=args.all_available,
@@ -101,18 +122,18 @@ def run(args):
         elif args.command == "collection-frames":
             from .frames import supplement
 
-            job = json.loads((args.output / "job.json").read_text())
+            job = json.loads((args.output / "job.json").read_text(encoding="utf-8"))
             item = next(i for i in job["items"] if i["video_id"] == args.video_id)
             state = supplement(item["video_file"], item["frames"], args.seconds)
         elif args.command == "collection-review":
             from .jobs import finalize
 
-            job = json.loads((args.output / "job.json").read_text())
+            job = json.loads((args.output / "job.json").read_text(encoding="utf-8"))
             if job.get("platform") == "xiaoyuzhou":
                 from .podcast import review as finalize
-            state = finalize(args.output, json.loads(args.review.read_text()))
+            state = finalize(args.output, json.loads(args.review.read_text(encoding="utf-8")))
         else:
-            state = json.loads((args.output / "job.json").read_text())
+            state = json.loads((args.output / "job.json").read_text(encoding="utf-8"))
         print(json.dumps(state, ensure_ascii=False, indent=2))
         return 0 if state["status"] in {"complete", "awaiting_analysis", "account_resolved", "ready", "discovered"} else 2
     except (ValueError, KeyError, OSError, StopIteration) as error:

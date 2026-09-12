@@ -147,7 +147,7 @@ def test_get_import_rejects_other_video(tmp_path):
 def test_incomplete_discovery_not_claimed_complete(tmp_path):
     _, review = fixture_job(tmp_path)
     path = tmp_path / "job.json"
-    state = json.loads(path.read_text())
+    state = json.loads(path.read_text(encoding="utf-8"))
     state["selection_fulfilled"] = False
     jobs.save(path, state)
     assert jobs.finalize(tmp_path, review)["status"] == "partial"
@@ -175,7 +175,7 @@ def test_ambiguous_get_submission_not_repeated(tmp_path, monkeypatch):
     monkeypatch.setattr(get_client, "Client", Client)
     monkeypatch.setattr("sys.argv", ["get", str(tmp_path), vid, url])
     get_client.main()
-    assert json.loads((tmp_path / (vid + ".json")).read_text())["status"] == "submitting"
+    assert json.loads((tmp_path / (vid + ".json")).read_text(encoding="utf-8"))["status"] == "submitting"
 
 
 def test_weread_resume_and_all_scope(tmp_path, monkeypatch):

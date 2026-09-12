@@ -36,7 +36,13 @@ def prepare(profile=None, wait=0):
         status = _fetch_daemon_status(query=urlencode({"contextId": context}))
         if (status and status.get("extensionConnected") is True
                 and status.get("contextId") == context):
-            return {"status": "ready", "profile": context, "actions": actions,
+            unknown = status.get("commandResultUnknown", 0)
+            pending = status.get("pending", 0)
+            readiness = 'needs_result_check' if unknown else ('busy' if pending else 'ready')
+            return {"status": readiness, "profile": context, "actions": actions,
+                    "message": ("先核对既有命令结果，不得重发" if unknown else
+                                "已有命令执行中，等待结束后再检查" if pending else
+                                "扩展连接就绪；目标页面与内容仍需实际核验"),
                     "pending": status.get("pending", 0),
                     "command_result_unknown": status.get("commandResultUnknown", 0)}
         if time.monotonic() >= deadline:

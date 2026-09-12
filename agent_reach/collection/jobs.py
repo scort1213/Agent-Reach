@@ -16,11 +16,13 @@ from urllib.parse import urlsplit
 
 import requests
 
+from .weread_helper.file_lock import exclusive_lock
+
 
 def save(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     tmp.replace(path)
 
 
@@ -131,11 +133,16 @@ def collect(manifest: dict, output: Path, *, limit=None, all_available=False, us
     selected = select(manifest, limit, all_available)
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    with exclusive_lock(output / "collection.lock"):
+        return _collect_locked(selected, output, use_get=use_get)
+
+
+def _collect_locked(selected: dict, output: Path, *, use_get: bool) -> dict:
     identity = {k: selected[k] for k in ["requested", "mode", "query", "captured_at"]}
     identity["ids"] = [i["video_id"] for i in selected["items"]]
     path = output / "job.json"
     if path.exists():
-        state = json.loads(path.read_text())
+        state = json.loads(path.read_text(encoding="utf-8"))
         if state["identity"] != identity:
             raise ValueError("输出目录属于其他采集任务，请使用新目录")
     else:
@@ -171,7 +178,7 @@ def collect(manifest: dict, output: Path, *, limit=None, all_available=False, us
         get_path = get_dir / f"{vid}.json"
         try:
             if not get_path.exists() and item.get("get_record"):
-                old = json.loads(Path(item["get_record"]).read_text())
+                old = json.loads(Path(item["get_record"]).read_text(encoding="utf-8"))
                 if old.get("status") != "original_returned" or vid not in old.get("url", ""):
                     raise ValueError(
                         "导入Get记录必须有同一视频编号和原文；短链接须先提供核对后的规范记录"
@@ -186,7 +193,7 @@ def collect(manifest: dict, output: Path, *, limit=None, all_available=False, us
                 save(get_path, old)
             if use_get and (
                 not get_path.exists()
-                or json.loads(get_path.read_text()).get("status") != "original_returned"
+                or json.loads(get_path.read_text(encoding="utf-8")).get("status") != "original_returned"
             ):
                 subprocess.run(
                     [
@@ -201,7 +208,7 @@ def collect(manifest: dict, output: Path, *, limit=None, all_available=False, us
                 )
             if not get_path.exists():
                 raise ValueError("等待Get原文记录")
-            get = json.loads(get_path.read_text())
+            get = json.loads(get_path.read_text(encoding="utf-8"))
             if get.get("status") != "original_returned" or not get.get("fields"):
                 raise ValueError("Get原文尚未就绪；保留任务编号以供续查")
             record["originals"] = get["fields"]
@@ -235,7 +242,7 @@ def collect(manifest: dict, output: Path, *, limit=None, all_available=False, us
 
             if not frames_path.exists():
                 extract(video, root=frames_path.parent)
-            frames = json.loads(frames_path.read_text())
+            frames = json.loads(frames_path.read_text(encoding="utf-8"))
             if frames["sha256"] != digest(video):
                 raise ValueError("视频已变化，不能复用旧画面")
             expected = item.get("duration_s")
@@ -271,13 +278,13 @@ def finalize(output: Path, review: dict) -> dict:
     """Validate Agent-authored evidence. This does not itself perform semantic review."""
     output = output.resolve()
     path = output / "job.json"
-    state = json.loads(path.read_text())
+    state = json.loads(path.read_text(encoding="utf-8"))
     if state.get("platform") == "wechat":
         article = next(r for r in state["items"] if r["id"] == review["article_id"])
         if article["status"] not in {"body_saved", "complete"}:
             raise ValueError("该文章尚未保存正文")
         body = Path(article["file"])
-        if digest(body) != article["sha256"] or review["quote"] not in body.read_text():
+        if digest(body) != article["sha256"] or review["quote"] not in body.read_text(encoding="utf-8"):
             raise ValueError("正文变化或引用不在正文中")
         for key in ["conclusion", "value", "structure", "doubts"]:
             if not isinstance(review.get(key), str) or not review[key].strip():
@@ -296,7 +303,8 @@ def finalize(output: Path, review: dict) -> dict:
                     ]
                 ]
             )
-            + f"\n\n[原文]({body})\n\n> {review['quote']}\n"
+            + f"\n\n[原文]({body})\n\n> {review['quote']}\n",
+            encoding="utf-8", newline="\n",
         )
         article.update(status="complete", report=str(report))
         state["completed"] = sum(a["status"] == "complete" for a in state["items"])
@@ -312,7 +320,7 @@ def finalize(output: Path, review: dict) -> dict:
     if record["status"] not in {"awaiting_analysis", "complete"}:
         raise ValueError("该视频尚未备齐原文与画面")
     frames_path = Path(record["frames"])
-    frames = json.loads(frames_path.read_text())
+    frames = json.loads(frames_path.read_text(encoding="utf-8"))
     chosen = review.get("reviewed_frames", [])
     allowed = {r["file"]: r for r in frames["frames"]}
     if not chosen or any(
@@ -328,7 +336,7 @@ def finalize(output: Path, review: dict) -> dict:
     source = Path(original["file"])
     if original.get("sha256") and digest(source) != original["sha256"]:
         raise ValueError("原文已变化")
-    text = source.read_text()
+    text = source.read_text(encoding="utf-8")
     if review["quote"] not in text:
         raise ValueError("引用不在原文中")
     title = record["source"].get("title", record["source"].get("headline", vid))
@@ -357,7 +365,7 @@ def finalize(output: Path, review: dict) -> dict:
     lines += [f"- [{allowed[f]['actual_s']:.2f}秒]({frames_path.parent / f})" for f in chosen]
     lines += ["", "本报告由Agent结合原文和抽样画面生成，非逐帧、非完整音轨核验。"]
     report = output / vid / "report.md"
-    report.write_text("\n".join(lines) + "\n")
+    report.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     save(output / vid / "review.json", review)
     record.update(status="complete", report=str(report), reviewed_frames=chosen)
     state_status(state)

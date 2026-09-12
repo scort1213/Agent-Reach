@@ -16,6 +16,15 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+if __package__:
+    from .weread_helper import file_lock
+else:  # Preserve direct script execution as well as python -m.
+    from weread_helper import file_lock as standalone_file_lock
+
+    file_lock = standalone_file_lock
+
+exclusive_lock = file_lock.exclusive_lock
+
 BASE = "https://openapi.biji.com/open/api/v1"
 CONFIG = Path.home() / "Library/Application Support/AgentReachGetNote/credentials.json"
 
@@ -39,7 +48,7 @@ def original_fields(note):
 
 class Client:
     def __init__(self):
-        self.config = json.loads(CONFIG.read_text())
+        self.config = json.loads(CONFIG.read_text(encoding="utf-8"))
         self.last_request = 0.0
 
     def request(self, path, payload=None, *, create=False):
@@ -91,7 +100,7 @@ class Client:
 
 def save(path, record):
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2))
+    tmp.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     tmp.replace(path)
 
 
@@ -101,16 +110,25 @@ def main(args=None):
         raise SystemExit("Usage: get_pipeline.py OUTPUT LABEL URL [LABEL URL ...]")
     root = Path(args[0])
     root.mkdir(parents=True, exist_ok=True)
+    # The collection parent holds collection.lock (or podcast.lock), never
+    # this lock. Concurrent direct invocations must share the Get state guard.
+    with exclusive_lock(root / "get.lock"):
+        return _main_locked(args, root)
+
+
+def _main_locked(args, root):
     client = Client()
     pending = []
     for label, url in zip(args[1::2], args[2::2]):
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", label):
             raise ValueError("Invalid label")
-        if not (valid_douyin_url(url) or re.fullmatch(r"https://www\.xiaoyuzhoufm\.com/episode/[a-f0-9]{24}/?", url)):
-            raise ValueError("Expected official Douyin or public Xiaoyuzhou episode URL")
+        if not (valid_douyin_url(url)
+                or re.fullmatch(r"https://www\.xiaoyuzhoufm\.com/episode/[a-f0-9]{24}/?", url)
+                or re.fullmatch(r"https://www\.youtube\.com/watch\?v=[A-Za-z0-9_-]{11}", url)):
+            raise ValueError("Expected official Douyin, YouTube or public Xiaoyuzhou episode URL")
         path = root / (label + ".json")
         if path.exists():
-            record = json.loads(path.read_text())
+            record = json.loads(path.read_text(encoding="utf-8"))
             if record["url"] != url:
                 raise ValueError("Existing label belongs to another URL")
             if record.get("status") == "original_returned":
@@ -193,7 +211,7 @@ def main(args=None):
                 )
                 for field, text in fields.items():
                     target = root / (record["label"] + "-" + field + ".txt")
-                    target.write_text(text)
+                    target.write_text(text, encoding="utf-8", newline="\n")
                     chinese = len(re.findall(r"[\u4e00-\u9fff]", text))
                     record["fields"][field] = {
                         "characters": len(text),
@@ -225,7 +243,7 @@ def main(args=None):
                                 "quality_warning",
                             ]
                         },
-                        ensure_ascii=False,
+                        ensure_ascii=True,
                     ),
                     flush=True,
                 )
@@ -252,7 +270,7 @@ def main(args=None):
         )
     # Transport completion is not evidence of a usable transcript.
     for label in args[1::2]:
-        record = json.loads((root / (label + ".json")).read_text())
+        record = json.loads((root / (label + ".json")).read_text(encoding="utf-8"))
         if record.get("status") != "original_returned" or record.get("quality_warning"):
             return 2
     return 0
