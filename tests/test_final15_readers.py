@@ -7,6 +7,28 @@ from agent_reach.collection import get_client, twitter, youtube
 from agent_reach.collection.jobs import save
 
 
+def test_x_parent_is_context_and_resume_corrects_legacy_count(tmp_path, monkeypatch):
+    ident = "2098679877302120715"
+    rows = [{"id": "2097814223627935810", "text": "Parent"},
+            {"id": ident, "text": "Target", "in_reply_to": "2097814223627935810"},
+            {"id": "2098679877302120716", "text": "Reply", "in_reply_to": ident},
+            {"id": "2098679877302120716", "text": "Reply", "in_reply_to": ident}]
+
+    def call(command, value, output):
+        save(output / "thread.json", rows)
+        return rows
+
+    monkeypatch.setattr(twitter, "call", call)
+    state = twitter.collect(ident, tmp_path)
+    assert state["reply_count"] == 1
+    assert state["context_count"] == 1
+    assert (tmp_path / "body.md").read_text().strip() == "Target"
+    state["reply_count"] = 3
+    save(tmp_path / "job.json", state)
+    monkeypatch.setattr(twitter, "call", lambda *a: pytest.fail("resume must not fetch"))
+    assert twitter.collect(ident, tmp_path, resume=True)["reply_count"] == 1
+
+
 def test_x_article_resolution_and_resume_integrity(tmp_path, monkeypatch):
     ident = "2097177704282136838"
     calls = []

@@ -17,6 +17,15 @@ def tweet_id(source: str) -> str:
     return match[1]
 
 
+def thread_counts(rows: list, ident: str) -> dict:
+    """Count only explicit direct replies; ancestors are context, not replies."""
+    others = {str(row.get("id")): row for row in rows
+              if row.get("id") and str(row["id"]) != ident}
+    replies = sum(str(row.get("in_reply_to")) == ident for row in others.values())
+    return {"reply_count": replies, "context_count": len(others) - replies,
+            "reply_scope": "仅统计明确回复目标帖的当前记录；父帖及其他上下文另计，不代表全部回复"}
+
+
 def call(command: str, ident: str, output: Path) -> list:
     argv = ["opencli", "twitter", command, ident, "-f", "json"]
     if command == "thread":
@@ -46,6 +55,10 @@ def collect(source: str, output: Path, resume: bool = False) -> dict:
                 for file, sha in old.get("hashes", {}).items():
                     if digest(output / file) != sha:
                         raise ValueError("保存的正文已变化，需重新读取")
+                if "thread.json" in old.get("hashes", {}):
+                    rows = json.loads((output / "thread.json").read_text(encoding="utf-8"))
+                    old.update(thread_counts(rows, ident))
+                    save(path, old)
                 return {**old, "round_mode": "saved_resume"}
         elif resume:
             raise ValueError("没有可续跑的任务")
@@ -81,8 +94,7 @@ def collect(source: str, output: Path, resume: bool = False) -> dict:
             "platform": "twitter", "source_id": ident, "source_url": root.get("url"),
             "captured_at": datetime.now(timezone.utc).isoformat(), "actual_entry": "opencli",
             "status": "awaiting_analysis" if meaningful else "unresolved_link",
-            "content_kind": kind, "reply_count": len(rows) - 1,
-            "reply_scope": "当前返回最多10条记录，不代表全部回复", "diagnostics": diagnostics,
+            "content_kind": kind, **thread_counts(rows, ident), "diagnostics": diagnostics,
             "hashes": {f: digest(output / f) for f in ("body.md", "thread.json")},
         }
         save(path, state)

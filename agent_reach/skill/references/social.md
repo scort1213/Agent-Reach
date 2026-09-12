@@ -309,6 +309,6 @@ opencli instagram saved --limit 20 -f yaml
 ## X 长文章与可续跑读取
 
 搜索取得 status 编号后执行 `agent-reach read-x "帖子编号或status链接" --output TASK`。
-若首帖只有短链接，入口继续用 OpenCLI article 读取对应长文章，并核对所属帖子编号；普通短帖保持原样，不凭长度补造内容。返回的回复只是当前最多10条记录，不代表全部回复。
+若目标帖只有短链接，入口继续用 OpenCLI article 读取对应长文章，并核对所属帖子编号；普通短帖保持原样，不凭长度补造内容。reply_count 只统计明确回复目标帖的去重记录；父帖及其他线程记录计入 context_count，不代表全部回复。父帖可以超出搜索日期范围，只作背景，不算新的近期结果。
 
 `agent-reach read-x "同一编号" --output TASK --resume` 只核对已保存正文和线程文件的哈希，不是一次新的实时抓取。去掉 --resume 才重新请求；新请求失败会覆盖任务状态，旧成功不能掩盖当前失败。Agent 实际读 body.md 与 thread.json 后另写分析，区分作者自述、证据和疑点；awaiting_analysis 不能标为分析完成。
