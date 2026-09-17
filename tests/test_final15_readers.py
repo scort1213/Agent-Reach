@@ -109,7 +109,7 @@ def test_get_youtube_official_payload_and_no_duplicate(tmp_path, monkeypatch):
     get_client.main(args)
     get_client.main(args)
     assert calls == [{"note_type": "link", "link_url": url}]
-    assert json.loads((tmp_path / "_Wf0NikMyAA.json").read_text())["status"] == "original_returned"
+    assert json.loads((tmp_path / "_Wf0NikMyAA.json").read_text(encoding="utf-8"))["status"] == "original_returned"
 
 
 def test_x_fresh_failure_replaces_previous_success(tmp_path, monkeypatch):
