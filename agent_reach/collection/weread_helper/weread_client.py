@@ -561,7 +561,7 @@ class WeReadClient:
         if not self.auth_path or not self.auth_path.exists():
             return False
         try:
-            data = json.loads(self.auth_path.read_text())
+            data = json.loads(self.auth_path.read_text(encoding="utf-8"))
             if any(not isinstance(data.get(key, ""), str) for key in ("name", "vid", "api_key")):
                 raise ValueError("Invalid local credential types")
             self.name, self.vid, self.api_key = data["name"], data["vid"], data.get("api_key", "")

@@ -98,3 +98,17 @@ def test_missing_daemon_startup(monkeypatch):
     monkeypatch.setattr(browser_ready.subprocess, 'run', lambda *a, **k: calls.append(a[0]))
     assert browser_ready.prepare('expected')['status'] == 'ready'
     assert calls == [['opencli', 'doctor']]
+
+@pytest.mark.parametrize('pending,unknown,expected', [
+    (0, 0, 'ready'), (2, 0, 'busy'), (0, 1, 'needs_result_check'),
+    (2, 1, 'needs_result_check'),
+])
+def test_preflight_does_not_allow_replay_of_unknown_or_running_commands(monkeypatch, pending, unknown, expected):
+    monkeypatch.setattr(browser_ready, '_fetch_daemon_status', lambda **kw: {
+        'extensionConnected': True, 'contextId': 'expected',
+        'pending': pending, 'commandResultUnknown': unknown})
+    monkeypatch.setattr(browser_ready.subprocess, 'run', lambda *a, **kw: pytest.fail('do not restart active daemon'))
+    result = browser_ready.prepare('expected')
+    assert result['status'] == expected
+    assert result['pending'] == pending
+    assert result['command_result_unknown'] == unknown

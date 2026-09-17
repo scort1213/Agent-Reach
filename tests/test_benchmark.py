@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_reach.benchmark import review, run_case, run_cases, scrub, summary
+from agent_reach.benchmark import review, route_assessments, run_case, run_cases, scrub, summary
 
 
 def case(**kwargs):
@@ -57,7 +57,7 @@ def test_blocked_case_does_not_execute(tmp_path):
 
 
 def test_explicit_denial_stops_same_platform_only(tmp_path):
-    cases = [case(argv=[sys.executable, '-c', 'print("Navigation rejected");exit(1)']),
+    cases = [case(argv=[sys.executable, '-c', 'print("Error: Access denied by security policy");exit(1)']),
              case(id='dependent'), case(id='independent', platform='other')]
     results = [json.loads(p.read_text()) for p in run_cases(cases, tmp_path, 'r1')]
     assert [r['transport'] for r in results] == ['command_failed', 'not_attempted', 'returned']
@@ -68,6 +68,172 @@ def test_timeout_and_missing_dependency(tmp_path):
     assert json.loads(p.read_text())['transport'] == 'timeout'
     p = run_case(case(argv=['no-such-benchmark-command-xyz']), tmp_path, 'r1')
     assert json.loads(p.read_text())['transport'] == 'missing_dependency'
+
+
+def test_timeout_stops_descendant_with_inherited_output_pipes(tmp_path):
+    import time
+
+    marker = tmp_path / 'child-survived.txt'
+    child = 'import sys,time;from pathlib import Path;time.sleep(2.5);Path(sys.argv[1]).write_bytes(b"survived")'
+    parent = ('import subprocess,sys,time;'
+              f'subprocess.Popen([sys.executable,"-c",{child!r},{str(marker)!r}]);'
+              'print("child launched",flush=True);time.sleep(30)')
+    started = time.monotonic()
+    p = run_case(case(timeout=1.5, argv=[sys.executable, '-c', parent]), tmp_path, 'r1')
+    result = json.loads(p.read_text(encoding='utf-8'))
+    assert result['transport'] == 'timeout'
+    assert result['failure_kind'] == 'timeout'
+    assert 'child launched' in Path(result['evidence']).read_text(encoding='utf-8')
+    assert time.monotonic() - started < 8
+    time.sleep(2.6)
+    assert not marker.exists(), 'The timed-out benchmark left its child running'
+
+
+def test_windows_timeout_uses_taskkill_tree_without_unix_signals(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    stop = Mock(return_value=SimpleNamespace(returncode=0))
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(benchmark.subprocess, 'run', stop)
+    monkeypatch.setattr(benchmark.os, 'killpg', Mock(side_effect=AssertionError('Unix API on Windows')), raising=False)
+    assert benchmark._stop_process_tree(proc) == 'process tree stopped'
+    assert stop.call_args.args[0] == ['taskkill', '/PID', '1234', '/T', '/F']
+    assert stop.call_args.kwargs['timeout'] == 5
+    proc.kill.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', ['missing', 'timeout', 'nonzero'])
+def test_windows_tree_cleanup_failure_preserves_parent_stop(monkeypatch, failure):
+    import subprocess
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    stop = Mock(return_value=SimpleNamespace(returncode=1))
+    if failure == 'missing':
+        stop.side_effect = FileNotFoundError('taskkill')
+    elif failure == 'timeout':
+        stop.side_effect = subprocess.TimeoutExpired('taskkill', 5)
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(benchmark.subprocess, 'run', stop)
+    assert benchmark._stop_process_tree(proc) == 'parent stop requested; process-tree cleanup unconfirmed'
+    proc.kill.assert_called_once_with()
+
+
+def test_windows_unconfirmed_cleanup_records_timeout_without_unbounded_pipe_wait(tmp_path, monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    proc.communicate.side_effect = [subprocess.TimeoutExpired('fake', 1),
+                                    subprocess.TimeoutExpired('fake', 5, output=b'partial evidence', stderr=b'child output')]
+    launch = Mock(return_value=proc)
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(benchmark.subprocess, 'Popen', launch)
+    monkeypatch.setattr(benchmark, '_stop_process_tree', lambda p: 'parent stop requested; process-tree cleanup unconfirmed')
+    p = run_case(case(argv=['fake'], timeout=1), tmp_path, 'r1')
+    row = json.loads(p.read_text(encoding='utf-8'))
+    evidence = Path(row['evidence']).read_text(encoding='utf-8')
+    assert row['transport'] == row['failure_kind'] == 'timeout'
+    assert 'partial evidence' in evidence and 'cleanup unconfirmed; output drain timed out' in evidence
+    assert launch.call_args.kwargs['start_new_session'] is False
+    assert launch.call_args.kwargs['env']['PYTHONIOENCODING'] == 'utf-8'
+    assert [c.kwargs['timeout'] for c in proc.communicate.call_args_list] == [1, 5]
+    proc.stdout.close.assert_not_called()
+    proc.stderr.close.assert_not_called()
+
+
+def test_posix_timeout_process_exit_race_is_not_an_error(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agent_reach import benchmark
+
+    proc = Mock(pid=1234)
+    monkeypatch.setattr(benchmark, 'sys', SimpleNamespace(platform='linux'))
+    monkeypatch.setattr(benchmark.os, 'killpg', Mock(side_effect=ProcessLookupError()), raising=False)
+    monkeypatch.setattr(benchmark.signal, 'SIGKILL', 9, raising=False)
+    assert benchmark._stop_process_tree(proc) == 'process group already exited'
+    proc.kill.assert_not_called()
+
+
+def test_chinese_cli_records_roundtrip_in_non_utf8_new_process(tmp_path):
+    import os
+    import subprocess
+    import textwrap
+
+    from agent_reach import benchmark
+
+    script = textwrap.dedent('''
+        import json, sys
+        from pathlib import Path
+        from agent_reach import benchmark
+
+        # Path.open is the stable seam across Python versions; 3.10's accessor
+        # retains its own reference to io.open after io.open is monkeypatched.
+        original_open = Path.open
+        def legacy_open(self, mode='r', buffering=-1, encoding=None, errors=None,
+                        newline=None):
+            if 'b' not in mode and encoding in (None, 'locale'):
+                encoding = 'cp1252'
+            return original_open(self, mode, buffering, encoding, errors, newline)
+        Path.open = legacy_open
+        root = Path(sys.argv[1])
+        text = '标题证据说明文章的具体来源。正文证据包含可核对的完整中文内容。'
+        try:
+            (root / 'legacy.txt').write_text(text)
+        except UnicodeEncodeError:
+            pass
+        else:
+            raise AssertionError('Legacy default simulation is not active')
+        source = root / '正文.txt'
+        source.write_bytes(text.encode('utf-8'))
+        task = {'platform': 'test', 'stage': 'analysis', 'task': '分析公众号中文正文',
+                'cache': 'fresh_request'}
+        cases = [dict(task, id='imported', evidence_file=str(source)),
+                 dict(task, id='executed', argv=[sys.executable, '-c', 'print(' + repr(text) + ')'])]
+        cases_file = root / '任务.json'
+        cases_file.write_bytes(json.dumps(cases, ensure_ascii=False).encode('utf-8'))
+        output = root / '中文输出'
+        sys.argv = ['benchmark', 'run', str(cases_file), '--output', str(output), '--round', 'r1']
+        benchmark.main()
+        assessment = {'verdict': 'pass', 'reason': '已核对原文与分析报告',
+                      'quotes': ['标题证据说明文章的具体来源', '正文证据包含可核对的完整中文内容'],
+                      'conclusion': '中文结论', 'value': '中文价值', 'limitations': '中文疑点'}
+        report = root / '中文分析报告.json'
+        report.write_bytes(json.dumps(assessment, ensure_ascii=False).encode('utf-8'))
+        results = list(output.glob('*/*/result.json'))
+        assert len(results) == 2
+        for result in results:
+            row = json.loads(result.read_bytes().decode('utf-8'))
+            assert row['task'] == task['task']
+            assert text in Path(row['evidence']).read_bytes().decode('utf-8')
+            assert b'\\r\\n' not in Path(row['evidence']).read_bytes()
+            sys.argv = ['benchmark', 'review', str(result), str(report)]
+            benchmark.main()
+            reviewed = json.loads(result.read_bytes().decode('utf-8'))
+            assert reviewed['review']['conclusion'] == '中文结论'
+        sys.argv = ['benchmark', 'summary', '--output', str(output)]
+        benchmark.main()
+        assert benchmark.summary(output)['platforms']['test']['passed'] == 2
+        print('UTF8_ROUNDTRIP_OK')
+    ''')
+    env = dict(os.environ, PYTHONUTF8='0', PYTHONIOENCODING='cp1252', PYTHONCOERCECLOCALE='0')
+    completed = subprocess.run([sys.executable, '-X', 'utf8=0', '-c', script, str(tmp_path)],
+                               cwd=Path(benchmark.__file__).parents[1], env=env,
+                               capture_output=True, encoding='utf-8', errors='replace', timeout=30)
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.rstrip().endswith('UTF8_ROUNDTRIP_OK')
+    assert '中文结论' in completed.stdout
 
 
 def test_scrubbing():
@@ -130,3 +296,418 @@ def test_source_probe_limits_feed_without_claiming_fulltext(monkeypatch, capsys)
     data = json.loads(capsys.readouterr().out)
     assert len(data['items']) == 3
     assert 'body' not in data['items'][0]
+
+
+def test_summary_keeps_missing_routes_and_versions_separate(tmp_path):
+    (tmp_path / 'run.json').write_text(json.dumps({'planned_routes': [{'platform': 'test'}, {'platform': 'missing'}]}))
+    run_case(case(candidate_version='v1', backend='formal'), tmp_path, 'r1')
+    run_case(case(candidate_version='v2', backend='optional', cache='cached_replay'), tmp_path, 'r2')
+    coverage = summary(tmp_path)['planned_coverage']
+    assert len(coverage) == 2
+    assert not coverage['missing']['recorded']
+    assert coverage['test']['versions'] == ['v1', 'v2']
+    assert coverage['test']['backends'] == ['formal', 'optional']
+    assert coverage['test']['cached_replays'] == 1
+    assert coverage['test']['unreviewed'] == 2
+
+
+def test_route_requires_correct_backend_all_stages_identity_and_rounds(tmp_path):
+    planned = {'candidate_version': 'v1', 'planned_routes': [{
+        'platform': 'test', 'route_group': 'custom',
+        'formal_backends': {s: ['formal'] for s in ('discovery', 'content', 'analysis')},
+        'fallback_backends': {s: ['backup'] for s in ('discovery', 'content', 'analysis')},
+    }]}
+    rows = []
+    for rnd in ('r1', 'r2', 'r3'):
+        for stage in ('discovery', 'content', 'analysis'):
+            p = run_case(case(stage=stage, backend='formal', candidate_version='v1', source_ids=['a']), tmp_path, rnd)
+            rows.append(review(p, {'verdict': 'pass', 'reason': 'Reviewed evidence',
+                                  'quotes': ['Title: sample', 'Body: actual source evidence'],
+                                  'conclusion': 'sample', 'value': 'sample', 'limitations': 'sample'}))
+    def verdict():
+        return route_assessments(rows, planned)['routes']['test']['verdict']
+    assert verdict() == 'pass'
+    rows[-1]['backend'] = 'optional'
+    assert verdict() == 'partial'
+    rows[-1]['backend'] = 'backup'
+    assert verdict() == 'fallback_pass'
+    rows[-1]['source_ids'] = ['different-article']
+    assert verdict() == 'partial'
+    rows[-1]['source_ids'] = ['a']
+    rows[-1]['cache'] = 'cached_replay'
+    assert verdict() == 'partial'
+    rows[-1]['cache'] = 'fresh_request'
+    rows[-1]['candidate_version'] = 'v0'
+    assert verdict() == 'partial'
+    rows[-1]['candidate_version'] = 'v1'
+    Path(rows[-1]['evidence']).unlink()
+    assert verdict() == 'partial'
+
+
+def accepted_rows(tmp_path, *, strict=False, platform='test'):
+    """Small real evidence files, with independent observation IDs for each round."""
+    import hashlib
+
+    planned = {'candidate_version': 'v1', 'acceptance_schema': 2 if strict else 1, 'planned_routes': [{
+        'platform': platform, 'route_group': 'custom',
+        'formal_backends': {s: ['formal'] for s in ('discovery', 'content', 'analysis')},
+        'fallback_backends': {s: ['backup'] for s in ('discovery', 'content', 'analysis')},
+    }]}
+    evidence = tmp_path / 'source.txt'
+    evidence.write_text('Title: sample article. Body: actual source evidence.')
+    artifacts = []
+    for kind in ('body', 'transcript', 'frame', 'report'):
+        file = tmp_path / (kind + '.txt')
+        file.write_text('Title: sample article. Body: actual source evidence.')
+        artifacts.append({'path': str(file), 'sha256': hashlib.sha256(file.read_bytes()).hexdigest(),
+                          'kind': kind, 'source_id': 'a'})
+    rows = []
+    for index, rnd in enumerate(('r1', 'r2', 'r3')):
+        for stage in ('discovery', 'content', 'analysis'):
+            previous = next((r for r in rows if r['round'] == 'r2' and r['stage'] == stage), {})
+            p = run_case(case(platform=platform, stage=stage, backend='formal', actual_entry='formal',
+                              candidate_version='v1', source_ids=['a'], evidence_file=str(evidence),
+                              execution_id='process-' + rnd, round_mode=('initial', 'repeat', 'resume')[index],
+                              resume_from=previous.get('observation_id'), artifacts=artifacts,
+                              cache='resume_validation' if index == 2 else 'fresh_request'), tmp_path, rnd)
+            rows.append(review(p, {'verdict': 'pass', 'reason': 'Reviewed actual evidence',
+                                  'quotes': ['Title: sample', 'Body: actual source evidence'],
+                                  'conclusion': 'sample', 'value': 'sample', 'limitations': 'sample',
+                                  'content_complete': True, 'visual_checked': True}))
+    return planned, rows
+
+
+def route_verdict(planned, rows):
+    return next(iter(route_assessments(rows, planned)['routes'].values()))['verdict']
+
+
+def test_latest_failure_cannot_be_hidden_by_old_pass(tmp_path):
+    planned, rows = accepted_rows(tmp_path)
+    p = run_case(case(stage='content', backend='formal', candidate_version='v1', source_ids=['a']), tmp_path, 'r3')
+    failure = review(p, {'verdict': 'fail', 'reason': 'Body unavailable', 'failure_kind': 'incomplete_content'})
+    rows.append(failure)
+    assert route_verdict(planned, rows) == 'partial'
+    check = route_assessments(rows, planned)['routes']['test']['checks'][-1]
+    assert failure['observation_id'] in check['effective_attempts']['content']
+    assert 'content' in check['missing']
+
+
+def test_unreviewed_retry_supersedes_old_pass(tmp_path):
+    planned, rows = accepted_rows(tmp_path)
+    p = run_case(case(stage='content', backend='formal', candidate_version='v1', source_ids=['a']), tmp_path, 'r3')
+    rows.append(json.loads(p.read_text()))
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_strict_rounds_require_distinct_resume_process_and_reference(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    assert route_verdict(planned, rows) == 'pass'
+    rows[-1]['execution_id'] = 'process-r2'
+    assert route_verdict(planned, rows) == 'partial'
+    rows[-1]['execution_id'] = 'process-r3'
+    rows[-1]['resume_from'] = 'not-an-observation'
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_changing_round_labels_does_not_create_new_observations(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    rows[-1]['observation_id'] = rows[2]['observation_id']
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_strict_manifest_does_not_upgrade_legacy_records(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    for row in rows:
+        row.pop('record_schema')
+    assert route_verdict(planned, rows) == 'partial'
+
+
+@pytest.mark.parametrize('cache', ['cached_replay', 'unknown', 'resume_validation'])
+def test_first_round_needs_new_observation_not_replay_or_resume(tmp_path, cache):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    rows[0]['cache'] = cache
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_valid_empty_result_never_counts_as_content_analysis(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    rows[0]['assessment'] = 'empty_valid'
+    result = route_assessments(rows, planned)['routes']['test']
+    assert result['verdict'] == 'partial'
+    assert result['empty_results'] == 1
+
+
+@pytest.mark.parametrize('kind', ['body', 'report'])
+def test_missing_or_modified_saved_artifacts_invalidate_completion(tmp_path, kind):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    file = tmp_path / (kind + '.txt')
+    file.write_text('truncated data')
+    assert route_verdict(planned, rows) == 'partial'
+    file.unlink()
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_truncated_body_cannot_count_as_complete(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    rows[1]['review']['content_complete'] = False
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_video_requires_matching_frames_and_actual_visual_review(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True, platform='douyin')
+    assert route_verdict(planned, rows) == 'pass'
+    rows[-1]['review']['visual_checked'] = False
+    assert route_verdict(planned, rows) == 'partial'
+    rows[-1]['review']['visual_checked'] = True
+    rows[-1]['artifacts'] = [a for a in rows[-1]['artifacts'] if a['kind'] != 'frame']
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_artifact_for_other_source_cannot_fill_missing_video(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True, platform='douyin')
+    rows[-1]['artifacts'] = [dict(a, source_id='different-video') if a['kind'] == 'frame' else a
+                             for a in rows[-1]['artifacts']]
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_four_browser_entries_preserved_and_initialization_not_platform_denial(tmp_path):
+    cases = [case(id='chrome-failed', backend='agent_computer_use', actual_entry='chrome_browser',
+                  failure_kind='initialization', argv=[sys.executable, '-c', 'exit(1)'])]
+    cases += [case(id=entry, backend='agent_computer_use', actual_entry=entry)
+              for entry in ('cua_native', 'iab', 'opencli')]
+    rows = [json.loads(p.read_text()) for p in run_cases(cases, tmp_path, 'r1')]
+    assert [r['actual_entry'] for r in rows] == ['chrome_browser', 'cua_native', 'iab', 'opencli']
+    assert [r['transport'] for r in rows] == ['command_failed', 'returned', 'returned', 'returned']
+    assert rows[0]['failure_kind'] == 'initialization'
+
+
+def test_structured_target_denial_stops_same_target_across_entries(tmp_path):
+    cases = [case(id='denied', actual_entry='chrome_browser', failure_kind='access_denied',
+                  failure_scope='https://example.test/one', source_urls=['https://example.test/one']),
+             case(id='same', actual_entry='cua_native', source_urls=['https://example.test/one']),
+             case(id='unrelated', actual_entry='cua_native', source_urls=['https://example.test/two'])]
+    rows = [json.loads(p.read_text()) for p in run_cases(cases, tmp_path, 'r1')]
+    assert rows[1]['transport'] == 'not_attempted'
+    assert rows[1]['failure_kind'] == 'access_denied'
+    assert rows[2]['transport'] == 'returned'
+
+
+def test_review_cannot_reclassify_explicit_denial_as_initialization(tmp_path):
+    p = run_case(case(argv=[sys.executable, '-c', 'print("Error: Access denied by security policy")']), tmp_path, 'r1')
+    with pytest.raises(ValueError, match='cannot be reclassified'):
+        review(p, {'verdict': 'blocked', 'reason': 'incorrect category', 'failure_kind': 'initialization'})
+
+
+def test_denial_cannot_be_bypassed_by_different_formal_entry(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    p = run_case(case(stage='discovery', backend='formal', actual_entry='chrome_browser',
+                      candidate_version='v1', failure_kind='access_denied'), tmp_path, 'r1')
+    rows.insert(0, review(p, {'verdict': 'blocked', 'reason': 'Tool explicitly denied this platform'}))
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_unknown_failure_does_not_authorize_fallback(tmp_path):
+    planned, rows = accepted_rows(tmp_path)
+    p = run_case(case(stage='content', backend='formal', candidate_version='v1', source_ids=['a']), tmp_path, 'r3')
+    rows.append(review(p, {'verdict': 'fail', 'reason': 'Unclassified error'}))
+    rows[-3]['backend'] = 'backup'  # r3 content, otherwise eligible legacy fallback.
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_fallback_success_preserves_primary_failure_and_recovery_link(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    p = run_case(case(stage='content', backend='formal', actual_entry='formal', candidate_version='v1', source_ids=['a']), tmp_path, 'r3')
+    failure = review(p, {'verdict': 'fail', 'reason': 'Known missing CLI dependency', 'failure_kind': 'missing_dependency'})
+    rows.append(failure)
+    old = rows[7]
+    p = run_case(case(stage='content', backend='backup', actual_entry='backup', candidate_version='v1',
+                      source_ids=['a'], execution_id='fallback-process', round_mode='resume',
+                      resume_from=rows[4]['observation_id'], cache='resume_validation',
+                      artifacts=old['artifacts'], recovery_of=[failure['observation_id']]), tmp_path, 'r3')
+    rows.append(review(p, old['review']))
+    result = route_assessments(rows, planned)['routes']['test']
+    assert result['verdict'] == 'fallback_pass'
+    assert result['primary_failures'] == 1
+    assert result['failures'][0]['failure_kind'] == 'missing_dependency'
+    rows[-1]['recovery_of'] = []
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_tied_timestamp_failure_wins_over_pass(tmp_path):
+    planned, rows = accepted_rows(tmp_path)
+    failure = dict(rows[-1], assessment='fail', failure_kind='incomplete_content', observation_id='0')
+    rows.append(failure)
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_entry_local_initialization_does_not_invalidate_native_task_success(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    p = run_case(case(stage='discovery', backend='formal', actual_entry='chrome_browser',
+                      candidate_version='v1', failure_kind='initialization'), tmp_path, 'r1')
+    rows.append(review(p, {'verdict': 'fail', 'reason': 'Chrome policy initialization failed'}))
+    assert route_verdict(planned, rows) == 'pass'
+    assert route_assessments(rows, planned)['routes']['test']['primary_failures'] == 1
+
+
+def test_unknown_entry_failure_is_not_automatic_permission_to_change_entry(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    failure = dict(rows[0], actual_entry='chrome_browser', assessment='fail',
+                   failure_kind='unknown', observation_id='unknown', started_at='2000-01-01')
+    rows.insert(0, failure)
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_explicit_denial_needs_separate_normal_restoration_evidence(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    failure = dict(rows[0], assessment='blocked', failure_kind='access_denied',
+                   observation_id='denial', started_at='2000-01-01')
+    for row in rows:
+        row['recovery_of'] = ['denial']
+        row['review']['recovery'] = {'kind': 'normal_access_restored', 'reason': 'Normal tool access restored',
+                                     'quotes': ['Title: sample', 'Body: actual source evidence']}
+    rows.insert(0, failure)
+    assert route_verdict(planned, rows) == 'pass'
+    rows[-1]['review']['recovery']['quotes'] = ['invented evidence', 'another invented quote']
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_denial_survives_another_command_batch_in_same_run(tmp_path):
+    list(run_cases([case(failure_kind='access_denied', failure_scope='test')], tmp_path, 'r1'))
+    later = [json.loads(p.read_text()) for p in run_cases([case(id='later', actual_entry='cua_native')], tmp_path, 'r2')]
+    assert later[0]['transport'] == 'not_attempted'
+    assert later[0]['failure_kind'] == 'access_denied'
+
+
+def test_restoration_observation_can_be_imported_but_must_be_reviewed(tmp_path):
+    denial_path = list(run_cases([case(failure_kind='access_denied', failure_scope='test')], tmp_path, 'r1'))[0]
+    denial = json.loads(denial_path.read_text())
+    source = tmp_path / 'normal-access.txt'
+    source.write_text('Title: sample article. Body: actual source evidence.')
+    restoration_path = list(run_cases([case(id='restored', evidence_file=str(source),
+                                            recovery_of=[denial['observation_id']])], tmp_path, 'r2'))[0]
+    assert json.loads(restoration_path.read_text())['transport'] == 'imported'
+    review(restoration_path, {'verdict': 'pass', 'reason': 'Normal tool access was restored',
+                              'quotes': ['Title: sample', 'Body: actual source evidence'],
+                              'recovery': {'kind': 'normal_access_restored', 'reason': 'Observed successful normal access',
+                                           'quotes': ['Title: sample', 'Body: actual source evidence']}})
+    later = json.loads(list(run_cases([case(id='later')], tmp_path, 'r3'))[0].read_text())
+    assert later['transport'] == 'returned'
+
+
+def test_report_mentioning_past_denial_is_not_a_new_tool_denial(tmp_path):
+    p = run_case(case(failure_kind='initialization',
+                      argv=[sys.executable, '-c', 'print("Previous Navigation rejected error is unrelated")']), tmp_path, 'r1')
+    assert json.loads(p.read_text())['failure_kind'] == 'initialization'
+
+
+def test_structured_tool_error_is_an_explicit_denial(tmp_path):
+    source = tmp_path / 'tool-error.json'
+    source.write_text(json.dumps({'isError': True, 'content': [{'text': 'Error: Access denied by security policy for this target'}]}))
+    p = run_case(case(evidence_file=str(source)), tmp_path, 'r1')
+    assert json.loads(p.read_text())['failure_kind'] == 'access_denied'
+
+
+def test_resume_may_use_first_valid_saved_round_not_only_second_round(tmp_path):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    for offset in range(3):
+        rows[6 + offset]['resume_from'] = rows[offset]['observation_id']
+    assert route_verdict(planned, rows) == 'pass'
+
+
+@pytest.mark.parametrize('invalid_reference', ['self', 'future', 'other_run', 'historical_replay'])
+def test_resume_reference_must_be_prior_live_observation_in_this_run(tmp_path, invalid_reference):
+    planned, rows = accepted_rows(tmp_path, strict=True)
+    if invalid_reference == 'self':
+        rows[-1]['resume_from'] = rows[-1]['observation_id']
+    elif invalid_reference == 'future':
+        rows[5]['round'] = 'r4'
+    elif invalid_reference == 'other_run':
+        rows[5]['run_root'] = '/another/benchmark/run'
+    else:
+        rows[5]['cache'] = 'cached_replay'
+    assert route_verdict(planned, rows) == 'partial'
+
+
+def test_primary_connection_failure_is_counted_with_successful_fallback(tmp_path):
+    planned, rows = accepted_rows(tmp_path)
+    for row in rows:
+        row['backend'] = 'backup'
+    p = run_case(case(stage='connection', backend='formal', candidate_version='v1'), tmp_path, 'preflight')
+    rows.append(review(p, {'verdict': 'blocked', 'reason': 'Not logged in', 'failure_kind': 'login_required'}))
+    result = route_assessments(rows, planned)['routes']['test']
+    assert result['verdict'] == 'fallback_pass'
+    assert result['primary_failures'] == 1
+    assert result['failures'][0]['stage'] == 'connection'
+
+
+def test_opencli_yaml_navigation_error_does_not_block_platform(tmp_path):
+    error = "ok: false\nerror:\n  code: COMMAND_EXEC\n  message: 'Pre-navigation to https://example.test failed: Navigation rejected.'\n  exitCode: 1\n  cause: Navigation rejected.\n"
+    rows = [json.loads(p.read_text()) for p in run_cases([
+        case(argv=[sys.executable, '-c', 'import sys;sys.stderr.write(' + repr(error) + ');sys.exit(1)']),
+        case(id='dependent', actual_entry='cua_native')], tmp_path, 'r1')]
+    assert rows[0]['failure_kind'] == 'unknown'
+    assert rows[1]['transport'] == 'returned'
+
+
+def test_attempt_ordering_compares_instants_across_timezones(tmp_path):
+    planned, rows = accepted_rows(tmp_path)
+    rows[-1]['started_at'] = '2026-09-11T15:30:00Z'
+    failure = dict(rows[-1], assessment='fail', failure_kind='adapter_error', observation_id='offset-failure',
+                   started_at='2026-09-11T23:00:00+08:00')
+    rows.append(failure)
+    assert route_verdict(planned, rows) == 'pass'
+    failure['started_at'] = '2026-09-11T23:31:00+08:00'
+    assert route_verdict(planned, rows) == 'partial'
+
+
+@pytest.mark.parametrize('url,blocked', [
+    ('https://douyin.com/video/123', True),
+    ('https://www.douyin.com/video/123', True),
+    ('https://live.douyin.com/video/123', True),
+    ('https://evil-douyin.com/video/123', False),
+    ('https://douyin.com.evil.example/video/123', False),
+])
+def test_hostname_denial_matches_domain_boundary(tmp_path, url, blocked):
+    list(run_cases([case(failure_kind='access_denied', failure_scope='douyin.com')], tmp_path, 'r1'))
+    row = json.loads(list(run_cases([case(id='next', actual_entry='cua_native', source_urls=[url])], tmp_path, 'r2'))[0].read_text())
+    assert (row['transport'] == 'not_attempted') == blocked
+
+
+def test_exact_url_denial_keeps_target_scope_and_ignores_fragment(tmp_path):
+    url = 'https://www.example.test/article/123?id=one'
+    list(run_cases([case(failure_kind='access_denied', failure_scope=url)], tmp_path, 'r1'))
+    cases = [case(id='same', source_urls=[url+'#end']),
+             case(id='other-path', source_urls=['https://www.example.test/article/124?id=one']),
+             case(id='other-query', source_urls=['https://www.example.test/article/123?id=two'])]
+    rows = [json.loads(p.read_text()) for p in run_cases(cases, tmp_path, 'r2')]
+    assert [r['transport'] for r in rows] == ['not_attempted','returned','returned']
+
+
+def test_denied_host_with_only_opaque_source_id_remains_blocked(tmp_path):
+    list(run_cases([case(failure_kind='access_denied', failure_scope='douyin.com')], tmp_path, 'r1'))
+    row = json.loads(list(run_cases([case(id='next', source_ids=['123'])], tmp_path, 'r2'))[0].read_text())
+    assert row['transport'] == 'not_attempted'
+
+
+@pytest.mark.parametrize('error', [
+    'Navigation rejected',
+    '{"error":{"code":"COMMAND_EXEC","message":"Navigation rejected"}}',
+    '{"isError":true,"content":[{"text":"Error: Navigation rejected for this target"}]}',
+])
+def test_generic_navigation_error_preserves_retry_and_independent_entries(tmp_path, error):
+    initial = list(run_cases([case(argv=[sys.executable, '-c', 'print(' + repr(error) + ');exit(1)'])], tmp_path, 'r1'))
+    failure = json.loads(initial[0].read_text())
+    assert failure['failure_kind'] == 'unknown'
+    later = list(run_cases([case(id='retry', actual_entry='opencli')], tmp_path, 'r2'))
+    assert json.loads(later[0].read_text())['transport'] == 'returned'
+
+
+@pytest.mark.parametrize('code', ['ACCESS_DENIED', 'POLICY_DENIED', 'PERMISSION_DENIED', 'USER_DENIED'])
+def test_explicit_structured_permission_error_remains_blocking(tmp_path, code):
+    error = json.dumps({'ok': False, 'error': {'code': code, 'message': 'Blocked target'}})
+    rows = list(run_cases([
+        case(argv=[sys.executable, '-c', 'print(' + repr(error) + ');exit(1)']),
+        case(id='same-target', actual_entry='cua_native'),
+    ], tmp_path, 'r1'))
+    assert json.loads(rows[0].read_text())['failure_kind'] == 'access_denied'
+    assert json.loads(rows[1].read_text())['transport'] == 'not_attempted'

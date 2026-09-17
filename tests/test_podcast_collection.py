@@ -71,7 +71,7 @@ def test_read_only_metadata_does_not_load_get_credentials(tmp_path, monkeypatch)
     monkeypatch.setattr(podcast, 'discover', lambda *a: ([sample()], True, 1))
     monkeypatch.setattr(get_client, 'Client', lambda: pytest.fail('no credentials for discovery'))
     podcast.collect(SOURCE, tmp_path, no_submit=True)
-    assert json.loads((tmp_path / 'job.json').read_text())['reserved_seconds'] == 0
+    assert json.loads((tmp_path / 'job.json').read_text(encoding="utf-8"))['reserved_seconds'] == 0
 
 
 def test_foreign_output_is_preserved(tmp_path):
