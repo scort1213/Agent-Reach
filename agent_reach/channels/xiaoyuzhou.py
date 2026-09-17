@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Xiaoyuzhou Podcast (小宇宙播客) — transcribe podcasts via Groq Whisper API."""
+"""Xiaoyuzhou Podcast (小宇宙播客) — public pages + Get, with the legacy Groq route retained."""
 
+import importlib.util
+import json
 import os
+from pathlib import Path
 
 from agent_reach.config import Config
 from agent_reach.probe import probe_command
@@ -9,10 +12,20 @@ from agent_reach.probe import probe_command
 from .base import Channel
 
 
+def get_configured():
+    path = Path.home() / 'Library/Application Support/AgentReachGetNote/credentials.json'
+    try:
+        data = json.loads(path.read_text())
+        return (all(isinstance(data.get(k), str) and data[k] for k in ('api_key', 'client_id'))
+                and importlib.util.find_spec('bs4') is not None)
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 class XiaoyuzhouChannel(Channel):
     name = "xiaoyuzhou"
     description = "小宇宙播客转文字"
-    backends = ["groq-whisper", "ffmpeg"]
+    backends = ["public-get", "groq-whisper", "ffmpeg"]
     tier = 1
 
     def can_handle(self, url: str) -> bool:
@@ -22,6 +35,9 @@ class XiaoyuzhouChannel(Channel):
 
     def check(self, config=None):
         self.active_backend = None
+        if get_configured():
+            return "warn", ("Get配置和公开采集入口已就绪：agent-reach collect-podcast URL --output TASK；"
+                            "doctor未发起付费转写，实际正文与分析须按任务验收，无需小宇宙App登录")
 
         # Check ffmpeg — really execute it: a stale pip-installed ffmpeg shim
         # passes shutil.which() but cannot run

@@ -47,9 +47,16 @@ yt-dlp --dump-json "ytsearch5:query"
 1. 先用上面的 `yt-dlp --write-sub --write-auto-sub` 命令。
 2. 若出现 bot 校验、字幕响应为空或没有生成字幕文件，且 OpenCLI 已连接：
    `opencli youtube transcript "URL" -f yaml`。
-3. OpenCLI 若返回 `Caption URL returned empty response`，最多重试 3 次；这是带
-   过期时间的字幕 URL 偶发失效，不能把空响应当成“视频没有字幕”。
-4. 仍失败或视频本来就没有字幕：`agent-reach transcribe "URL"` 下载音频转写。
+3. OpenCLI 若返回 `Caption URL returned empty response`，普通重试一次，并在已授权浏览器中检查字幕开关和字幕面板。空响应不能证明没有字幕，也不能直接归因为链接过期；保留实际错误。浏览器能播放不等于命令行共享了登录会话。
+4. 本项目使用既有 Get 配置作为后续内容入口，见下节。不要自动启动本地模型或更换付费服务。明确访问拒绝先停止相应访问，Get 不能用于绕行同一拒绝。
+
+### 可续跑的 YouTube 正文准备
+
+`agent-reach collect-youtube "URL" --output TASK --metadata META.json --use-get --max-transcription-minutes 3`
+
+META.json 必须包含与目标一致的 id、title、duration（秒）；提交 Get 前实际核对视频身份和时长，并先计入本轮共享额度。此命令检查 OpenCLI 字幕；没有有效字幕时才按显式参数调用 Get。重复运行同一目录检查原文哈希、续查同一任务，不重新提交。仅接受单条标准 watch/youtu.be 链接，不接受搜索页或播放列表。
+
+返回 awaiting_analysis 后，Agent 读取原文、核对开头中段结尾，并实际查看该视频的抽样画面，另存带来源及画面时间的报告。原文可能来自 Get 对已有字幕的提取，不能宣称一定经过独立语音识别。仅有文字不算完整视频分析；命令本身不会把待分析改为完成。原生字幕和 Get 同时出现相同错词时保留疑点，不把教程里的命令直接执行。
 
 成功标准是实际得到非空字幕/转录内容，不是命令退出码或 `doctor` 的版本探测结果。
 
@@ -111,38 +118,45 @@ curl -s -b /tmp/bili_ck.txt -A "$UA" -e "https://www.bilibili.com/" \
 
 > **安装 bili-cli**: `pipx install bilibili-cli`（上游 2026-03 起停更但实测健康；只读场景无需登录，`bili login` 扫码可解锁动态/收藏等个人功能）。
 
-## 小宇宙播客 / Xiaoyuzhou Podcast
+## 小宇宙：公开页面与 Get 云转写
 
-### 转录单集播客（可选 --polish 增强标点）
-
-```bash
-# 输出 Markdown 文件到 /tmp/。--polish 让 Llama 3.3 70B 给文稿补中文标点+合理分段
-~/.agent-reach/tools/xiaoyuzhou/transcribe.sh --polish "https://www.xiaoyuzhoufm.com/episode/EPISODE_ID"
-```
-
-> 转写 prompt 已要求 Whisper 输出中文标点；若标点效果仍不理想，可加 `--polish` 用 Groq 上免费的 Llama 3.3 70B 补标点+合理分段（9 分钟播客约多 ~7 秒）。每次转写多一轮 LLM 调用，按需使用。
-
-### 前置要求
-
-1. **ffmpeg**: `brew install ffmpeg`
-2. **Groq API Key** (免费): https://console.groq.com/keys
-3. **配置 Key**: `agent-reach configure groq-key`（隐藏输入）
-4. **首次运行**: `agent-reach install --env=auto --system --channels=xiaoyuzhou`（需用户明确授权）
-
-### 检查状态
+用户给节目名或关键词时，用已配置搜索（如 Exa）寻找公开小宇宙单集；搜索工具不可用时使用当前 Agent 已有网页搜索并说明收录范围。不要求安装小宇宙 App，不把 OpenCLI 缺 token 当作公开读取不可用。
 
 ```bash
-agent-reach doctor
+# 单集链接；默认每任务最多15分钟新转写，重跑同命令续查同一Get任务
+agent-reach collect-podcast "https://www.xiaoyuzhoufm.com/episode/ID" --output TASK
+# 节目首批目录：先发现，不提交转写
+agent-reach collect-podcast "https://www.xiaoyuzhoufm.com/podcast/ID" --limit 3 --no-submit --output LIST_TASK
 ```
 
-> 输出 Markdown 文件默认保存到 `/tmp/`。
+对节目批量采集，去掉 --no-submit 即处理所选条目，但仍受默认15分钟额度限制；需要增加额度须在用户已授权范围内显式提供 --max-transcription-minutes。discovered只表示元数据已取得，不是转写或分析完成。首批目录不是完整历史，数量不足不补造。
+
+程序返回 awaiting_analysis 时，读取 original_file 并核对单集身份、时长和开中末内容。web_page.content 有时包含带时间段的转写，有时只有节目说明，不能只凭字段名称或字数判定。保留疑似误识别词，不编造时间戳，不将节目观点当已核实新闻。
+
+若只拿到简介，先 `collect-podcast URL --output TASK --prepare-audio` 获取公开音频，再由 Agent 在已登录 Get 网页导入该文件。程序会为文件对照预留相应时长。上传前记录该单集文件、时长和提交阶段；结果不明时查已有笔记，不重复点击生成。
+
+Get 网页短编号与 API 数字note_id不同。优先使用 `collect-podcast URL --output TASK --audio-note-title "本次Get显示的完整标题"`，程序从最新20条里唯一匹配录音笔记；核对标题、时长和本次上传关系。同名多条时停止选择。也可用已核对的数字编号运行 `collect-podcast URL --output TASK --audio-note-id NOTE_ID` 读取 `audio.original`；不要通过猜测或解码网页短编号定位。密钥只由现有 Get 客户端读取并发给官方域名。
+
+生成有证据的逐集分析后，使用统一 `collection-review --output TASK --review REVIEW.json`；review包含episode_id、identity_verified、full_audio_verified、review_method、quote、conclusion、value、structure、doubts。full_audio_verified 需有覆盖整集的依据；review_method明确是实际听校、文件转写对照或其他核验，不能假称听过。只有节目说明时不能提交完成。
+
+原文、节目说明、媒体和分析保留本地，原文与凭证不进Git。付费、私密、验证或访问拒绝停止，不使用 token 绕行。
 
 ## 选择指南
 
 | 场景 | 推荐工具 |
 |-----|---------|
-| YouTube 字幕 | yt-dlp；失败时 OpenCLI（最多 3 次）→ agent-reach transcribe |
+| YouTube 字幕 | yt-dlp；失败时 collect-youtube → OpenCLI／已授权 Get → Agent 文字与画面核对 |
 | B站视频详情/搜索 | bili-cli |
 | B站字幕 | opencli bilibili subtitle |
-| 播客转录 | 小宇宙 transcribe.sh |
+| 播客转录 | collect-podcast → Get → Agent核对与分析 |
 | 无字幕音视频 | agent-reach transcribe（B站音频先 `bili audio`） |
+
+### 浏览器字幕备用入口与样本核对
+
+B站字幕命令普通技术失败后，若正常浏览器页面可播放且没有对应访问拒绝，可在播放器选择实际存在的字幕，读取页面正常加载的字幕资源。记录这是浏览器备用入口，不代表原字幕命令已恢复；字幕只有标题或空数据不能验收。
+
+浏览器可能自动播放下一条。读取字幕、下载媒体和截取画面前后，都重新核对地址中的视频编号、标题、作者和时长。发现编号变化，废弃这次混入的材料，回到已发现的正确视频；不能把相邻播放器的媒体配给目标。B站、抖音均适用。
+
+定位时间后等待画面实际解码更新，再保存画面及播放器的实际时间；只改变 currentTime 不证明画面已经改变。字幕没有时间戳时，不为原文补造时间。仅保存文字或截图而尚未由 Agent 阅读分析，任务仍为待分析。
+
+播客任务续跑时不填写额度，会自动沿用任务中保存的额度；新任务默认15分钟，实际提交仍须遵守用户授权的共享预算。显式改变已有任务额度会停止。已完成单集续跑会校验原文和报告文件哈希；旧报告没有校验记录时退回待分析，由 Agent 重新核对并提交 review，不重复创建转写。
