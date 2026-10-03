@@ -191,31 +191,7 @@ def _collect_locked(selected: dict, output: Path, *, use_get: bool) -> dict:
                     data["file"] = str(target)
                 old["label"] = vid
                 save(get_path, old)
-            if use_get and (
-                not get_path.exists()
-                or json.loads(get_path.read_text(encoding="utf-8")).get("status") != "original_returned"
-            ):
-                subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "agent_reach.collection.get_client",
-                        str(get_dir),
-                        vid,
-                        item["url"],
-                    ],
-                    check=False,
-                )
-            if not get_path.exists():
-                raise ValueError("等待Get原文记录")
-            get = json.loads(get_path.read_text(encoding="utf-8"))
-            if get.get("status") != "original_returned" or not get.get("fields"):
-                raise ValueError("Get原文尚未就绪；保留任务编号以供续查")
-            record["originals"] = get["fields"]
-            for original in record["originals"].values():
-                if original.get("sha256") and digest(Path(original["file"])) != original["sha256"]:
-                    raise ValueError("原文字段与已保存文件不一致")
-            record["quality_warning"] = get.get("quality_warning")
+            # Validate the video and frames before creating potentially billable Get work.
             owned = folder / "video.mp4"
             if item.get("local_video"):
                 video = Path(item["local_video"]).resolve()
@@ -251,6 +227,31 @@ def _collect_locked(selected: dict, output: Path, *, use_get: bool) -> dict:
                 or abs(frames["duration_s"] - float(expected)) > 2
             ):
                 raise ValueError("页面时长与媒体时长不符")
+            if use_get and (
+                not get_path.exists()
+                or json.loads(get_path.read_text(encoding="utf-8")).get("status") != "original_returned"
+            ):
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "agent_reach.collection.get_client",
+                        str(get_dir),
+                        vid,
+                        item["url"],
+                    ],
+                    check=False,
+                )
+            if not get_path.exists():
+                raise ValueError("等待Get原文记录")
+            get = json.loads(get_path.read_text(encoding="utf-8"))
+            if get.get("status") != "original_returned" or not get.get("fields"):
+                raise ValueError("Get原文尚未就绪；保留任务编号以供续查")
+            record["originals"] = get["fields"]
+            for original in record["originals"].values():
+                if original.get("sha256") and digest(Path(original["file"])) != original["sha256"]:
+                    raise ValueError("原文字段与已保存文件不一致")
+            record["quality_warning"] = get.get("quality_warning")
             record.update(
                 status="awaiting_analysis",
                 frames=str(frames_path),

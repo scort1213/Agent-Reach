@@ -164,13 +164,26 @@ def _douyin_in_child(directory, ready, begin, calls):
     assert begin.wait(10)
     result = jobs.collect({
         "mode": "account", "query": "fixture", "captured_at": "2026-09-10T15:00:00+08:00",
-        "items": [{"video_id": "12345678901"}],
+        "items": [{"video_id": "12345678901", "local_video": str(Path(directory) / "input.mp4")}],
     }, Path(directory), limit=1)
-    assert result["items"][0]["status"] == "needs_browser_media"
+    assert result["items"][0]["status"] == "awaiting_analysis"
 
 
 @pytest.mark.parametrize("worker", [_get_in_child, _douyin_in_child])
 def test_competing_tasks_submit_get_once(tmp_path, worker):
+    if worker is _douyin_in_child:
+        import av
+        from PIL import Image
+
+        with av.open(str(tmp_path / "input.mp4"), "w") as container:
+            stream = container.add_stream("mpeg4", rate=10)
+            stream.width, stream.height, stream.pix_fmt = 32, 32, "yuv420p"
+            for _ in range(10):
+                frame = av.VideoFrame.from_image(Image.new("RGB", (32, 32), "blue"))
+                for packet in stream.encode(frame):
+                    container.mux(packet)
+            for packet in stream.encode():
+                container.mux(packet)
     ctx = multiprocessing.get_context("spawn")
     begin, ready_one, ready_two = ctx.Event(), ctx.Event(), ctx.Event()
     calls = ctx.Value("i", 0)
