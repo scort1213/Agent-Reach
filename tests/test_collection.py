@@ -130,6 +130,73 @@ def test_resume_rejects_other_job(tmp_path):
         jobs.collect(m, tmp_path, limit=1, use_get=False)
 
 
+@pytest.mark.parametrize("case", ["missing", "blob", "missing_local", "invalid_local", "download_failed", "unregistered"])
+def test_media_failure_never_submits_get(tmp_path, monkeypatch, case):
+    m = manifest(1)
+    row = m["items"][0]
+    output = tmp_path / "job"
+    if case == "blob":
+        row["media_url"] = "blob:https://www.douyin.com/local"
+    elif case in {"missing_local", "invalid_local"}:
+        local = tmp_path / "input.mp4"
+        row["local_video"] = str(local)
+        if case == "invalid_local":
+            local.write_bytes(b"not a video")
+    elif case == "download_failed":
+        row["media_url"] = "https://sample.douyinvod.com/video.mp4"
+        def fail_download(*args, **kwargs):
+            raise ValueError("媒体未返回视频，不跟随重定向")
+        monkeypatch.setattr(jobs, "download", fail_download)
+    elif case == "unregistered":
+        folder = output / row["video_id"]
+        folder.mkdir(parents=True)
+        (folder / "video.mp4").write_bytes(b"user video")
+    def reject_submit(*args, **kwargs):
+        pytest.fail("Get must not run when media validation fails")
+    monkeypatch.setattr(jobs.subprocess, "run", reject_submit)
+    state = jobs.collect(m, output, limit=1, use_get=True)
+    assert state["items"][0]["status"] == ("needs_browser_media" if case == "missing" else "partial")
+
+
+def test_duration_mismatch_stops_get_but_verified_video_can_resume(tmp_path, monkeypatch):
+    import av
+    from PIL import Image
+    video = tmp_path / "input.mp4"
+    with av.open(str(video), "w") as container:
+        stream = container.add_stream("mpeg4", rate=10)
+        stream.width, stream.height, stream.pix_fmt = 32, 32, "yuv420p"
+        for _ in range(10):
+            frame = av.VideoFrame.from_image(Image.new("RGB", (32, 32), "blue"))
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+    m = manifest(1)
+    row = m["items"][0]
+    row.update(local_video=str(video), duration_s=100)
+    output = tmp_path / "job"
+    calls = []
+    def submit(args, **kwargs):
+        calls.append(args)
+        root = Path(args[3])
+        original = root / "original.txt"
+        original.write_text("test transcript")
+        jobs.save(root / (row["video_id"] + ".json"), {
+            "status": "original_returned", "fields": {"audio.original": {
+                "file": str(original), "sha256": jobs.digest(original)}}})
+    monkeypatch.setattr(jobs.subprocess, "run", submit)
+    state = jobs.collect(m, output, limit=1, use_get=True)
+    assert not calls
+    assert "页面时长与媒体时长不符" in state["items"][0]["error"]["message"]
+    row["duration_s"] = 1
+    state = jobs.collect(m, output, limit=1, use_get=True)
+    assert state["items"][0]["status"] == "awaiting_analysis"
+    assert len(calls) == 1
+    jobs.collect(m, output, limit=1, use_get=True)
+    assert len(calls) == 1
+    assert video.is_file()
+
+
 def test_get_import_rejects_other_video(tmp_path):
     m = manifest(1)
     wrong = tmp_path / "wrong.json"
