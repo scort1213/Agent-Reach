@@ -51,10 +51,11 @@ _OPENCLI_DAEMON_STATUS_URL = "http://127.0.0.1:19825/status"
 _MAX_DAEMON_STATUS_BYTES = 64 * 1024
 
 
-def _fetch_daemon_status(timeout: int = 2):
+def _fetch_daemon_status(timeout: int = 2, *, query: str = ""):
+
     """Read OpenCLI's loopback status endpoint without starting the CLI."""
     request = urllib.request.Request(
-        _OPENCLI_DAEMON_STATUS_URL,
+        _OPENCLI_DAEMON_STATUS_URL + ("?" + query if query else ""),
         headers={"X-OpenCLI": "1"},
         method="GET",
     )

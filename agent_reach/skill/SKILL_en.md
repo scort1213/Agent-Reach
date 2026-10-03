@@ -7,14 +7,16 @@ description: >
 
   Also MUST USE when user mentions any platform or shares any URL/link:
   Twitter/X, Reddit, Facebook, Instagram, YouTube, GitHub, Bilibili, XiaoHongShu,
-  Xiaoyuzhou Podcast, LinkedIn/jobs/recruiting, V2EX, Xueqiu (stocks), RSS.
+  Xiaoyuzhou Podcast, LinkedIn/jobs/recruiting, V2EX, Xueqiu (stocks), Toutiao articles, RSS.
 
-  15 platforms, multi-backend routing (OpenCLI / per-platform CLIs / APIs).
+  Includes fixed WeRead accounts and Douyin account/keyword collection with evidence-based analysis.
+
+  16 platforms, multi-backend routing (OpenCLI / per-platform CLIs / APIs).
   Zero config for 6 channels. Run `agent-reach doctor --json` to see which
   backend serves each platform right now.
 
   NOT for: writing reports/analysis/translation (this skill only FETCHES
-  internet content); posting/commenting/liking (write operations); platforms
+  internet content, except analysis accompanying WeRead/Douyin collection); posting/commenting/liking (write operations); platforms
   that already have a dedicated skill installed (prefer that skill).
 metadata:
   homepage: https://github.com/Panniantong/Agent-Reach
@@ -22,7 +24,7 @@ metadata:
 
 # Agent Reach — internet capability router
 
-15 platforms, multiple backends each. **When this skill exists, use it for
+16 platforms, multiple backends each. **When this skill exists, use it for
 these platforms — do not invent your own approach.**
 
 ## Standing rules (apply for the whole session)
@@ -54,7 +56,7 @@ these platforms — do not invent your own approach.**
 | XiaoHongShu / Twitter / Bilibili / V2EX / Reddit / Facebook / Instagram | social | [references/social.md](references/social.md) |
 | Jobs / LinkedIn | career | [references/career.md](references/career.md) |
 | GitHub / code | dev | [references/dev.md](references/dev.md) |
-| Web pages / articles / RSS | web | [references/web.md](references/web.md) |
+| Toutiao articles / web pages / articles / RSS | web | [references/web.md](references/web.md) |
 | YouTube / Bilibili / podcast transcripts | video | [references/video.md](references/video.md) |
 | Xueqiu / stock quotes | finance | [references/finance.md](references/finance.md) |
 
@@ -66,6 +68,9 @@ mcporter call exa.web_search_exa query="query" numResults=5
 
 # Read any web page
 curl -s "https://r.jina.ai/URL"
+
+# Read a specific Toutiao article; require actual content, not an empty success
+agent-reach read-toutiao "https://www.toutiao.com/article/ARTICLE_ID/" --json
 
 # GitHub search
 gh search repos "query" --sort stars --limit 10
@@ -150,3 +155,7 @@ If a channel needs setup, fetch the install guide:
 https://raw.githubusercontent.com/Panniantong/agent-reach/main/docs/install.md
 
 The user only provides cookies / one extension click; the agent does the rest.
+
+## WeRead accounts and Douyin collection
+
+For these workflows read [references/collection.md](references/collection.md). The host Agent performs browser discovery and semantic review; collection commands only prepare materials until an evidence-based review is recorded.

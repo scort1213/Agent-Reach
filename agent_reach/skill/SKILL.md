@@ -8,13 +8,15 @@ description: >
   Also MUST USE when user mentions any platform or shares any URL/链接:
   小红书/xiaohongshu/xhs, Twitter/推特/X, B站/bilibili, Reddit, Facebook,
   Instagram, V2EX, LinkedIn/领英/招聘/求职/jobs, YouTube, GitHub code search, 小宇宙播客,
-  雪球/股票行情, RSS feeds, or any web URL.
+  雪球/股票行情, 今日头条/toutiao 文章, RSS feeds, or any web URL.
 
-  15 platforms, multi-backend routing (OpenCLI / per-platform CLIs / APIs).
+  Also handles 微信读书固定公众号 and 抖音账号/关键词采集及有证据的内容分析。
+
+  16 platforms, multi-backend routing (OpenCLI / per-platform CLIs / APIs).
   Zero config for 6 channels. Run `agent-reach doctor --json` to see which
   backend serves each platform right now.
 
-  NOT for: 写报告/数据分析/翻译等内容加工（本 skill 只负责从互联网获取内容）；
+  NOT for: 写报告/数据分析/翻译等内容加工（除固定公众号/抖音/播客采集附带的内容分析外，本 skill 只负责从互联网获取内容）；
   发帖/评论/点赞等写操作；已有专门 skill 的平台（先用专门 skill）。
 
   【路由方式】SKILL.md 包含路由表和常用命令，复杂场景需按需阅读对应分类的 references/*.md。
@@ -25,7 +27,7 @@ metadata:
 
 # Agent Reach — 互联网能力路由器
 
-15 平台、多后端。**本 skill 存在时必须用它访问这些平台，不要自己发明方案。**
+16 平台、多后端。**本 skill 存在时必须用它访问这些平台，不要自己发明方案。**
 
 ## 常驻规则（全程适用）
 
@@ -46,11 +48,12 @@ metadata:
 
 | 用户意图 | 分类 | 详细文档 |
 |---------|------|---------|
+| 微信读书固定公众号；抖音账号/关键词、原文与画面分析 | collection | [references/collection.md](references/collection.md) |
 | 网页搜索/代码搜索 | search | [references/search.md](references/search.md) |
 | 小红书/推特/B站/V2EX/Reddit/Facebook/Instagram | social | [references/social.md](references/social.md) |
 | 招聘/职位/LinkedIn | career | [references/career.md](references/career.md) |
 | GitHub/代码 | dev | [references/dev.md](references/dev.md) |
-| 网页/文章/RSS | web | [references/web.md](references/web.md) |
+| 今日头条关键词/账号批量/文章、网页、RSS | web | [references/web.md](references/web.md) |
 | YouTube/B站/播客字幕 | video | [references/video.md](references/video.md) |
 | 雪球/股票行情 | finance | [references/finance.md](references/finance.md) |
 
@@ -62,6 +65,9 @@ mcporter call exa.web_search_exa query="query" numResults=5
 
 # 通用网页阅读
 curl -s "https://r.jina.ai/URL"
+
+# 今日头条指定文章（优先专用读取器，失败不能当成空正文）
+agent-reach read-toutiao "https://www.toutiao.com/article/ARTICLE_ID/" --json
 
 # GitHub 搜索
 gh search repos "query" --sort stars --limit 10
@@ -133,6 +139,10 @@ agent-reach doctor --json
 - [网页阅读](references/web.md) — Jina Reader, RSS
 - [视频播客](references/video.md) — YouTube, B站, 小宇宙
 - [金融行情](references/finance.md) — 雪球股票行情、搜索、热门内容
+
+## 场景稳定性验收
+
+用户要求 benchmark 或平台验收时，使用 [基准执行与审阅](references/benchmark.md)。命令成功不代表内容完整或分析完成。
 
 ## 配置渠道
 

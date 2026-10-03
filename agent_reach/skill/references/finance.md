@@ -25,6 +25,9 @@ opencli xueqiu stock NVDA -f yaml
 opencli xueqiu hot -f yaml
 opencli xueqiu hot-stock -f yaml
 
+# 指定股票的讨论帖子（不是单帖下的回复）
+opencli xueqiu comments NVDA --limit 3 -f yaml
+
 # 查看全部只读命令
 opencli xueqiu --help
 ```
@@ -41,6 +44,6 @@ agent-reach configure --from-browser chrome --platform xueqiu
 
 ## 验收与失败处理
 
-- 以返回股票名称、代码、价格或非空内容列表为成功；退出码 0 但字段为空不算成功。
-- HTTP 400 通常是会话/Cookie 问题，不表示股票代码不存在。
+- 股票字段或非空讨论列表只证明对应阶段成功；讨论分析还需完整原帖及真实依据。`hot`是全站热门，不能替代指定股票讨论。`comments`返回的description可能是摘要，长帖必须核对完整正文。
+- HTTP 400 本身不能确定是会话、参数、平台限制或接口变化，也不表示股票代码不存在；先保留脱敏错误及失败阶段，不据此要求重复登录。
 - `whoami` 成功而 `stock`/`hot` 失败时，按适配器解析或平台接口问题报告，不要误诊成未登录。
